@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Register · Gosyen Stock Opname</title>
+    <link rel="preconnect" href="https://fonts.bunny.net">
+    <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600,700" rel="stylesheet" />
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+</head>
+<body class="min-h-screen">
+    <main class="mx-auto grid min-h-screen max-w-md place-items-center px-4">
+        <form method="POST" action="{{ route('register.store') }}" class="panel w-full p-6">
+            @csrf
+            <p class="text-sm font-bold uppercase text-[var(--brand)]">Gosyen</p>
+            <h1 class="mt-1 text-2xl font-bold text-[var(--text)]">Daftar Employee</h1>
+            <p class="mt-2 text-sm text-[var(--muted)]">Akun baru perlu approval admin sebelum bisa mengakses database stok.</p>
+
+            @if ($errors->any())
+                <div class="mt-4 rounded-md bg-[#fdecec] p-3 text-sm font-semibold text-[#a12020]">{{ $errors->first() }}</div>
+            @endif
+
+            <div class="mt-5 grid gap-3">
+                <label>
+                    <span class="label">Nama</span>
+                    <input name="name" value="{{ old('name') }}" required autofocus class="field mt-1">
+                </label>
+                <label>
+                    <span class="label">Email</span>
+                    <input name="email" type="email" value="{{ old('email') }}" required class="field mt-1">
+                </label>
+                <label>
+                    <span class="label">Password</span>
+                    <input name="password" type="password" required class="field mt-1">
+                </label>
+                <label>
+                    <span class="label">Konfirmasi Password</span>
+                    <input name="password_confirmation" type="password" required class="field mt-1">
+                </label>
+                <button class="rounded-md bg-[var(--brand)] px-4 py-3 text-sm font-bold text-white">Kirim Registrasi</button>
+            </div>
+
+            <p class="mt-5 text-center text-sm text-[var(--muted)]">
+                Sudah punya akun?
+                <a href="{{ route('login') }}" class="font-bold text-[var(--brand)]">Masuk</a>
+            </p>
+        </form>
+    </main>
+</body>
+</html>

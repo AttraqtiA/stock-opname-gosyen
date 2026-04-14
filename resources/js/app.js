@@ -6,6 +6,8 @@ if (app) {
     const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
     const elements = {
         productForm: document.querySelector('#productForm'),
+        companyForm: document.querySelector('#companyForm'),
+        companySelect: document.querySelector('#companySelect'),
         movementForm: document.querySelector('#movementForm'),
         movementProduct: document.querySelector('#movementProduct'),
         searchInput: document.querySelector('#searchInput'),
@@ -24,7 +26,7 @@ if (app) {
         syncStatus: document.querySelector('#syncStatus'),
         themeToggle: document.querySelector('#themeToggle'),
     };
-    let state = { products: [], activities: [] };
+    let state = { companies: [], currentCompanyId: null, products: [], activities: [] };
 
     function applyTheme(theme) {
         document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -53,7 +55,11 @@ if (app) {
 
     async function loadData() {
         setBusy('Mengambil data stok...');
-        state = await request('/stock-opname');
+        const params = new URLSearchParams();
+        if (elements.companySelect.value) {
+            params.set('company_id', elements.companySelect.value);
+        }
+        state = await request(`/stock-opname?${params.toString()}`);
         elements.loadingState.hidden = true;
         setSynced();
         render();
@@ -109,12 +115,13 @@ if (app) {
         return state.products.filter((product) => {
             const haystack = `${product.code} ${product.name} ${product.type}`.toLowerCase();
             return (!query || haystack.includes(query))
-                && (type === 'all' || product.type === type)
+                && (type === 'all' || product.normalizedType === type)
                 && (status === 'all' || getStatus(product) === status);
         });
     }
 
     function render() {
+        renderCompanies();
         renderFilters();
         renderSummary();
         renderMovementOptions();
@@ -124,12 +131,25 @@ if (app) {
 
     function renderFilters() {
         const currentType = elements.typeFilter.value || 'all';
-        const types = [...new Set(state.products.map((product) => product.type))].sort();
+        const typeMap = new Map();
+        state.products.forEach((product) => {
+            if (!typeMap.has(product.normalizedType)) {
+                typeMap.set(product.normalizedType, product.type);
+            }
+        });
+        const types = [...typeMap.entries()].sort((a, b) => a[1].localeCompare(b[1]));
         elements.typeFilter.innerHTML = [
             '<option value="all">Semua tipe</option>',
-            ...types.map((type) => `<option value="${escapeHtml(type)}">${escapeHtml(type)}</option>`),
+            ...types.map(([normalizedType, type]) => `<option value="${escapeHtml(normalizedType)}">${escapeHtml(type)}</option>`),
         ].join('');
-        elements.typeFilter.value = types.includes(currentType) ? currentType : 'all';
+        elements.typeFilter.value = typeMap.has(currentType) ? currentType : 'all';
+    }
+
+    function renderCompanies() {
+        elements.companySelect.innerHTML = state.companies
+            .map((company) => `<option value="${company.id}">${escapeHtml(company.name)} (${escapeHtml(company.code_prefix)})</option>`)
+            .join('');
+        elements.companySelect.value = String(state.currentCompanyId || '');
     }
 
     function renderSummary() {
@@ -214,6 +234,7 @@ if (app) {
         return {
             location: elements.sessionLocation.value,
             officer: elements.sessionOfficer.value,
+            company_id: Number(elements.companySelect.value || state.currentCompanyId),
         };
     }
 
@@ -243,6 +264,24 @@ if (app) {
                     actual_stock: Number(data.get('actualStock') || 0),
                     ...sessionPayload(),
                 }),
+            });
+            event.currentTarget.reset();
+            setSynced();
+            render();
+        } catch (error) {
+            setError(error);
+        }
+    });
+
+    elements.companyForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const data = new FormData(event.currentTarget);
+
+        try {
+            setBusy('Membuat company...');
+            state = await request('/stock-opname/companies', {
+                method: 'POST',
+                body: JSON.stringify({ name: data.get('name') }),
             });
             event.currentTarget.reset();
             setSynced();
@@ -303,6 +342,9 @@ if (app) {
     });
 
     elements.searchInput.addEventListener('input', renderProducts);
+    elements.companySelect.addEventListener('change', () => {
+        loadData().catch(setError);
+    });
     elements.typeFilter.addEventListener('change', renderProducts);
     elements.statusFilter.addEventListener('change', renderProducts);
     elements.exportCsv.addEventListener('click', () => {

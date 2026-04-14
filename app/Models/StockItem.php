@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class StockItem extends Model
@@ -12,8 +13,10 @@ class StockItem extends Model
 
     protected $fillable = [
         'code',
+        'company_id',
         'name',
         'type',
+        'normalized_type',
         'unit',
         'system_stock',
         'actual_stock',
@@ -27,5 +30,10 @@ class StockItem extends Model
     public function movements(): HasMany
     {
         return $this->hasMany(StockMovement::class);
+    }
+
+    public function company(): BelongsTo
+    {
+        return $this->belongsTo(Company::class);
     }
 }

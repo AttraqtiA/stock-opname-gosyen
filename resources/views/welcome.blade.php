@@ -28,12 +28,23 @@
                 </div>
 
                 <div class="flex items-center gap-2">
+                    @if (auth()->user()->isAdmin())
+                        <a href="{{ route('admin.users') }}" class="hidden rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm font-bold text-[var(--text)] transition hover:bg-[var(--panel-soft)] sm:inline-flex">
+                            Admin
+                        </a>
+                    @endif
                     <button id="themeToggle" class="rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm font-bold text-[var(--text)] transition hover:bg-[var(--panel-soft)]" type="button">
                         Dark
                     </button>
                     <button id="exportCsv" class="rounded-md bg-[#0f6b4b] px-3 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#0b5139]" type="button">
                         Export Excel
                     </button>
+                    <form method="POST" action="{{ route('logout') }}">
+                        @csrf
+                        <button class="rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm font-bold text-[var(--text)] transition hover:bg-[var(--panel-soft)]" type="submit">
+                            Logout
+                        </button>
+                    </form>
                 </div>
             </div>
         </header>
@@ -46,6 +57,20 @@
 
         <main class="mx-auto grid max-w-7xl gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[360px_1fr] lg:px-8">
             <section class="grid gap-4 lg:sticky lg:top-24 lg:self-start">
+                <div class="panel p-4">
+                    <p class="text-sm font-semibold text-[var(--muted)]">Client company</p>
+                    <div class="mt-3 grid gap-3">
+                        <label class="block">
+                            <span class="label">Database aktif</span>
+                            <select id="companySelect" class="field mt-1"></select>
+                        </label>
+                        <form id="companyForm" class="grid grid-cols-[1fr_auto] gap-2">
+                            <input name="name" required class="field" placeholder="Company baru" />
+                            <button class="rounded-md bg-[var(--brand)] px-3 py-2 text-sm font-bold text-white">Tambah</button>
+                        </form>
+                    </div>
+                </div>
+
                 <div class="panel p-4">
                     <p class="text-sm font-semibold text-[var(--muted)]">Sesi opname</p>
                     <div class="mt-3 grid grid-cols-2 gap-3">
