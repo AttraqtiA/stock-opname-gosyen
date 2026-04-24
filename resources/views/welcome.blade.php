@@ -15,8 +15,10 @@
 </head>
 <body class="min-h-screen antialiased">
     <div id="stock-app" class="min-h-screen">
+        <div id="alertRegion" class="alert-region" aria-live="polite" aria-atomic="true"></div>
+
         <header class="sticky top-0 z-30 border-b bg-[var(--header)]/95 backdrop-blur">
-            <div class="mx-auto flex max-w-7xl items-center justify-between gap-3 px-4 py-3 sm:px-6 lg:px-8">
+            <div class="mx-auto flex max-w-7xl items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-6 lg:px-8">
                 <div class="flex min-w-0 items-center gap-3">
                     <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--line)] bg-[var(--panel-soft)] text-[var(--brand)]">
                         <span class="text-lg font-black">G</span>
@@ -27,36 +29,52 @@
                     </div>
                 </div>
 
-                <div class="flex items-center gap-2">
+                <div class="relative flex shrink-0 items-center gap-2">
+                    <button id="navMenuToggle" class="grid h-10 w-10 place-items-center rounded-md border border-[var(--line)] bg-[var(--panel)] text-[var(--text)] transition hover:bg-[var(--panel-soft)] sm:hidden" type="button" aria-label="Open menu" aria-expanded="false">
+                        <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                        </svg>
+                    </button>
+                    <div id="navActions" class="nav-actions">
                     @if (auth()->user()->isAdmin())
-                        <a href="{{ route('admin.users') }}" class="hidden rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm font-bold text-[var(--text)] transition hover:bg-[var(--panel-soft)] sm:inline-flex">
-                            Admin
+                        <a href="{{ route('admin.users') }}" class="nav-action">
+                            Akun
+                        </a>
+                        <a href="{{ route('admin.companies') }}" class="nav-action">
+                            Clients
                         </a>
                     @endif
-                    <button id="themeToggle" class="rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm font-bold text-[var(--text)] transition hover:bg-[var(--panel-soft)]" type="button">
-                        Dark
-                    </button>
-                    <button id="exportCsv" class="rounded-md bg-[#0f6b4b] px-3 py-2 text-sm font-bold text-white shadow-sm transition hover:bg-[#0b5139]" type="button">
-                        Export Excel
+                    <button id="themeToggle" class="nav-icon-action" type="button" aria-label="Toggle dark mode">
+                        <svg class="theme-icon theme-icon-moon h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M21 14.4A8.2 8.2 0 0 1 9.6 3a8.8 8.8 0 1 0 11.4 11.4Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                        <svg class="theme-icon theme-icon-sun hidden h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M12 4V2M12 22v-2M4.93 4.93 3.52 3.52M20.48 20.48l-1.41-1.41M4 12H2M22 12h-2M4.93 19.07l-1.41 1.41M20.48 3.52l-1.41 1.41" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            <circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="2"/>
+                        </svg>
                     </button>
                     <form method="POST" action="{{ route('logout') }}">
                         @csrf
-                        <button class="rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 py-2 text-sm font-bold text-[var(--text)] transition hover:bg-[var(--panel-soft)]" type="submit">
+                        <button class="nav-action w-full" type="submit">
                             Logout
                         </button>
                     </form>
+                    </div>
                 </div>
             </div>
         </header>
 
         <div class="border-b border-[var(--line)] bg-[var(--subheader)]">
-            <div class="mx-auto max-w-7xl px-4 py-5 sm:px-6 lg:px-8">
+            <div class="mx-auto flex max-w-7xl items-center justify-between gap-3 px-3 py-4 sm:px-6 lg:px-8">
                 <h2 class="text-lg font-bold text-[var(--text)]">Stock Opname</h2>
+                <button id="exportCsv" class="rounded-md bg-[#0f6b4b] px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#0b5139] sm:text-sm" type="button">
+                    Export
+                </button>
             </div>
         </div>
 
-        <main class="mx-auto grid max-w-7xl gap-4 px-4 py-4 sm:px-6 lg:grid-cols-[360px_1fr] lg:px-8">
-            <section class="grid gap-4 lg:sticky lg:top-24 lg:self-start">
+        <main class="mx-auto grid max-w-7xl items-start gap-3 px-3 py-3 sm:gap-4 sm:px-6 lg:grid-cols-[360px_1fr] lg:px-8">
+            <section class="grid auto-rows-max gap-4 lg:sticky lg:top-24 lg:self-start">
                 <div class="panel p-4">
                     <p class="text-sm font-semibold text-[var(--muted)]">Client company</p>
                     <div class="mt-3 grid gap-3">
@@ -64,24 +82,31 @@
                             <span class="label">Database aktif</span>
                             <select id="companySelect" class="field mt-1"></select>
                         </label>
-                        <form id="companyForm" class="grid grid-cols-[1fr_auto] gap-2">
-                            <input name="name" required class="field" placeholder="Company baru" />
-                            <button class="rounded-md bg-[var(--brand)] px-3 py-2 text-sm font-bold text-white">Tambah</button>
-                        </form>
-                    </div>
-                </div>
-
-                <div class="panel p-4">
-                    <p class="text-sm font-semibold text-[var(--muted)]">Sesi opname</p>
-                    <div class="mt-3 grid grid-cols-2 gap-3">
-                        <label class="block">
-                            <span class="label">Lokasi</span>
-                            <input id="sessionLocation" class="field mt-1" value="Gudang Utama" />
-                        </label>
-                        <label class="block">
-                            <span class="label">Petugas</span>
-                            <input id="sessionOfficer" class="field mt-1" value="Tim Gosyen" />
-                        </label>
+                        @if (auth()->user()->isAdmin())
+                            <form id="companyForm" class="grid gap-2">
+                                <input name="name" required class="field" placeholder="Company baru" />
+                                <input name="location" class="field" placeholder="Lokasi utama" />
+                                <select name="pic_user_id" class="field">
+                                    <option value="">Pilih PIC</option>
+                                    @foreach ($picUsers as $picUser)
+                                        <option value="{{ $picUser->id }}">{{ $picUser->name }} · {{ $picUser->email }}</option>
+                                    @endforeach
+                                </select>
+                                <button class="rounded-md bg-[var(--brand)] px-3 py-2 text-sm font-bold text-white">Tambah</button>
+                            </form>
+                        @else
+                            <form id="companyForm" class="grid gap-2">
+                                <input name="name" required class="field" placeholder="Request company baru" />
+                                <input name="location" class="field" placeholder="Lokasi utama" />
+                                <select name="pic_user_id" class="field">
+                                    <option value="">Pilih PIC</option>
+                                    @foreach ($picUsers as $picUser)
+                                        <option value="{{ $picUser->id }}">{{ $picUser->name }} · {{ $picUser->email }}</option>
+                                    @endforeach
+                                </select>
+                                <button class="rounded-md bg-[var(--brand)] px-3 py-2 text-sm font-bold text-white">Kirim Request</button>
+                            </form>
+                        @endif
                     </div>
                 </div>
 
@@ -115,7 +140,7 @@
                                 <input name="systemStock" type="number" min="0" class="field mt-1" value="0" />
                             </label>
                             <label class="block">
-                                <span class="label">Stok fisik</span>
+                                <span class="label">Stok opname awal</span>
                                 <input name="actualStock" type="number" min="0" class="field mt-1" value="0" />
                             </label>
                         </div>
@@ -126,15 +151,15 @@
                 </form>
 
                 <form id="movementForm" class="panel p-4">
-                    <p class="text-sm font-semibold text-[var(--muted)]">Gerak stok cepat</p>
-                    <h2 class="text-xl font-bold text-[var(--text)]">Masuk / Keluar</h2>
+                    <p class="text-sm font-semibold text-[var(--muted)]">Input manual</p>
+                    <h2 class="text-xl font-bold text-[var(--text)]">Opname / Mutasi</h2>
                     <div class="mt-4 grid gap-3">
                         <select name="productId" id="movementProduct" class="field" required></select>
                         <div class="grid grid-cols-[1fr_110px] gap-3">
                             <select name="kind" class="field">
+                                <option value="count">Input opname</option>
                                 <option value="in">Tambah stok</option>
                                 <option value="out">Minus stok</option>
-                                <option value="count">Set stok fisik</option>
                             </select>
                             <input name="qty" type="number" min="0" required class="field" placeholder="Qty" />
                         </div>
@@ -146,7 +171,7 @@
                 </form>
             </section>
 
-            <section class="grid gap-4">
+            <section class="grid auto-rows-max gap-4">
                 <div class="panel grid gap-3 p-4 md:grid-cols-[1fr_170px_150px]">
                     <label class="block">
                         <span class="label">Cari nama, tipe, kode</span>
@@ -169,7 +194,7 @@
 
                 <div id="loadingState" class="panel p-4 text-sm font-semibold text-[var(--muted)]">Mengambil data stok...</div>
 
-                <div class="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <div class="grid auto-rows-max grid-cols-2 gap-3 md:grid-cols-4">
                     <div class="metric"><span>Total SKU</span><strong id="totalSku">0</strong></div>
                     <div class="metric"><span>Sesuai</span><strong id="matchCount">0</strong></div>
                     <div class="metric"><span>Selisih +</span><strong id="plusCount">0</strong></div>
@@ -184,7 +209,7 @@
                             <p class="text-sm font-semibold text-[var(--muted)]">Riwayat</p>
                             <h2 class="text-xl font-bold text-[var(--text)]">Aktivitas terakhir</h2>
                         </div>
-                        <span id="syncStatus" class="rounded-md bg-[var(--panel-soft)] px-3 py-2 text-xs font-bold text-[var(--muted)]">Database</span>
+                        <a id="historyLink" href="{{ route('stock-opname.history') }}" class="rounded-md bg-[var(--panel-soft)] px-3 py-2 text-xs font-bold text-[var(--brand)] transition hover:bg-[var(--field)]">Semua Riwayat</a>
                     </div>
                     <div id="activityLog" class="divide-y divide-[var(--line)]"></div>
                 </div>

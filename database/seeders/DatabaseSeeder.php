@@ -19,7 +19,7 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
-        User::updateOrCreate(['email' => 'admin@gosyen.test'], [
+        User::updateOrCreate(['email' => 'admin@gosyen'], [
             'name' => 'Gosyen Admin',
             'password' => 'password',
             'role' => 'admin',
@@ -37,16 +37,23 @@ class DatabaseSeeder extends Seeder
 
         $company = Company::updateOrCreate(
             ['code_prefix' => 'GDC'],
-            ['name' => 'Gosyen Demo Company']
+            [
+                'name' => '[CONTOH] Gosyen El Company',
+                'location' => 'Gudang Utama',
+                'pic_user_id' => User::query()->where('email', 'admin@gosyen.test')->value('id'),
+                'next_stock_number' => 1,
+                'status' => 'approved',
+                'approved_at' => now(),
+            ]
         );
 
         $items = [
-            ['name' => 'Plastik Vacuum 1 kg', 'type' => 'Kemasan', 'unit' => 'pcs', 'system_stock' => 240, 'actual_stock' => 238],
-            ['name' => 'Bawang Putih Kupas', 'type' => 'Bahan Baku', 'unit' => 'kg', 'system_stock' => 32, 'actual_stock' => 36],
-            ['name' => 'Bakso Sapi Premium', 'type' => 'Barang Jadi', 'unit' => 'pack', 'system_stock' => 118, 'actual_stock' => 118],
-            ['name' => 'Tepung Tapioka', 'type' => 'Bahan Baku', 'unit' => 'kg', 'system_stock' => 75, 'actual_stock' => 69],
+            ['name' => 'Rego Plastik Mundak', 'type' => 'Kemasan', 'unit' => 'pcs', 'system_stock' => 240, 'actual_stock' => 238],
+            ['name' => 'Indomie Rendang', 'type' => 'Bahan Baku', 'unit' => 'kg', 'system_stock' => 32, 'actual_stock' => 36],
+            ['name' => 'Bakso Sapi Mawardi', 'type' => 'Barang Jadi', 'unit' => 'pack', 'system_stock' => 118, 'actual_stock' => 118],
+            ['name' => 'Tepung-tepungan', 'type' => 'Bahan Baku', 'unit' => 'kg', 'system_stock' => 75, 'actual_stock' => 69],
             ['name' => 'Label Gosyen Frozen', 'type' => 'Kemasan', 'unit' => 'roll', 'system_stock' => 18, 'actual_stock' => 18],
-            ['name' => 'Siomay Ayam Mini', 'type' => 'Barang Jadi', 'unit' => 'pack', 'system_stock' => 86, 'actual_stock' => 91],
+            ['name' => 'Ketoprak', 'type' => 'Barang Jadi', 'unit' => 'pack', 'system_stock' => 86, 'actual_stock' => 91],
         ];
 
         foreach ($items as $item) {
@@ -76,6 +83,10 @@ class DatabaseSeeder extends Seeder
                 'officer' => 'Tim Gosyen',
             ]);
         }
+
+        $company->update([
+            'next_stock_number' => StockItem::query()->where('company_id', $company->id)->count() + 1,
+        ]);
     }
 
     private function nextStockCode(string $prefix): string

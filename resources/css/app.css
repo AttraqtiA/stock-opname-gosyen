@@ -62,6 +62,96 @@
         box-shadow: 0 1px 2px rgba(17, 24, 39, 0.04);
     }
 
+    .alert-region {
+        position: fixed;
+        top: 1rem;
+        right: 1rem;
+        z-index: 60;
+        width: min(420px, calc(100vw - 2rem));
+        pointer-events: none;
+    }
+
+    .alert-toast {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        align-items: center;
+        gap: 0.75rem;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        padding: 0.875rem 1rem;
+        box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18);
+        font-size: 0.875rem;
+        font-weight: 800;
+        pointer-events: auto;
+    }
+
+    .alert-toast-error {
+        border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+        background: #fdecec;
+        color: #a12020;
+    }
+
+    .dark .alert-toast-error {
+        background: #492125;
+        color: #ffb5b8;
+    }
+
+    .alert-toast-success {
+        border-color: color-mix(in srgb, var(--success) 35%, var(--line));
+        background: #e8f6ec;
+        color: #0b6a3b;
+    }
+
+    .dark .alert-toast-success {
+        background: #123628;
+        color: #7bd8a4;
+    }
+
+    .alert-toast button {
+        min-height: 32px;
+        min-width: 32px;
+        border-radius: 8px;
+        color: inherit;
+        font-size: 1.25rem;
+        line-height: 1;
+    }
+
+    .nav-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .nav-action,
+    .nav-icon-action {
+        min-height: 40px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        color: var(--text);
+        font-size: 0.875rem;
+        font-weight: 800;
+        transition: background 150ms ease, border-color 150ms ease;
+    }
+
+    .nav-action {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.5rem 0.75rem;
+    }
+
+    .nav-icon-action {
+        display: grid;
+        width: 40px;
+        place-items: center;
+    }
+
+    .nav-action:hover,
+    .nav-icon-action:hover {
+        background: var(--panel-soft);
+    }
+
     .label {
         color: var(--muted);
         font-size: 0.75rem;
@@ -122,7 +212,7 @@
     }
 
     .stock-action {
-        min-height: 40px;
+        min-height: 44px;
         border-radius: 8px;
         border: 1px solid var(--line);
         padding: 0.5rem 0.625rem;
@@ -135,5 +225,90 @@
     .stock-action:hover {
         border-color: var(--brand);
         background: var(--panel-soft);
+    }
+
+    .empty-state {
+        min-height: 140px;
+        display: grid;
+        place-content: center;
+        border-radius: 8px;
+        border: 1px dashed var(--line);
+        background: var(--panel);
+        padding: 1.5rem;
+        text-align: center;
+    }
+
+    @media (max-width: 640px) {
+        .alert-region {
+            top: 0.75rem;
+            right: 0.75rem;
+            left: 0.75rem;
+            width: auto;
+        }
+
+        .nav-actions {
+            position: absolute;
+            top: calc(100% + 0.5rem);
+            right: 0;
+            display: none;
+            min-width: 180px;
+            border-radius: 8px;
+            border: 1px solid var(--line);
+            background: var(--panel);
+            padding: 0.5rem;
+            box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18);
+        }
+
+        .nav-actions.is-open {
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .nav-action,
+        .nav-icon-action {
+            width: 100%;
+            justify-content: flex-start;
+        }
+
+        .nav-icon-action {
+            display: flex;
+            padding: 0.5rem 0.75rem;
+        }
+
+        .nav-icon-action::after {
+            content: 'Theme';
+            margin-left: 0.625rem;
+            font-size: 0.875rem;
+            font-weight: 800;
+        }
+
+        .field {
+            min-height: 48px;
+            font-size: 1rem;
+        }
+
+        .metric {
+            min-height: 74px;
+            padding: 0.75rem;
+        }
+
+        .metric strong {
+            font-size: 1.5rem;
+        }
+
+        .stock-card h3 {
+            font-size: 1rem;
+            line-height: 1.35;
+        }
+
+        .stock-action {
+            min-height: 48px;
+            padding-inline: 0.5rem;
+        }
+
+        .empty-state {
+            min-height: 120px;
+            padding: 1rem;
+        }
     }
 }

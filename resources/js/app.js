@@ -20,18 +20,46 @@ if (app) {
         plusCount: document.querySelector('#plusCount'),
         minusCount: document.querySelector('#minusCount'),
         exportCsv: document.querySelector('#exportCsv'),
-        sessionLocation: document.querySelector('#sessionLocation'),
-        sessionOfficer: document.querySelector('#sessionOfficer'),
         loadingState: document.querySelector('#loadingState'),
         syncStatus: document.querySelector('#syncStatus'),
+        historyLink: document.querySelector('#historyLink'),
         themeToggle: document.querySelector('#themeToggle'),
+        navMenuToggle: document.querySelector('#navMenuToggle'),
+        navActions: document.querySelector('#navActions'),
+        alertRegion: document.querySelector('#alertRegion'),
     };
     let state = { companies: [], currentCompanyId: null, products: [], activities: [] };
+    const pendingActions = new Set();
+    let alertTimeout;
+
+    function selectedCompanyId() {
+        const fromSelect = Number(elements.companySelect.value || 0);
+        const fromUrl = Number(new URLSearchParams(window.location.search).get('company_id') || 0);
+
+        return fromSelect || fromUrl || state.currentCompanyId;
+    }
+
+    function syncCompanyUrl(companyId, replace = false) {
+        if (!companyId) return;
+
+        const url = new URL(window.location.href);
+        url.searchParams.set('company_id', companyId);
+        const method = replace ? 'replaceState' : 'pushState';
+        window.history[method]({}, '', url);
+    }
 
     function applyTheme(theme) {
         document.documentElement.classList.toggle('dark', theme === 'dark');
         localStorage.setItem('gosyen-stock-theme', theme);
-        elements.themeToggle.textContent = theme === 'dark' ? 'Light' : 'Dark';
+        elements.themeToggle.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+        elements.themeToggle.querySelector('.theme-icon-moon')?.classList.toggle('hidden', theme === 'dark');
+        elements.themeToggle.querySelector('.theme-icon-sun')?.classList.toggle('hidden', theme !== 'dark');
+    }
+
+    function setMenuOpen(isOpen) {
+        elements.navActions?.classList.toggle('is-open', isOpen);
+        elements.navMenuToggle?.setAttribute('aria-expanded', String(isOpen));
+        elements.navMenuToggle?.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
     }
 
     async function request(url, options = {}) {
@@ -45,42 +73,108 @@ if (app) {
             ...options,
         });
 
+        const contentType = response.headers.get('content-type') || '';
+        const payload = contentType.includes('application/json')
+            ? await response.json()
+            : await response.text();
+
         if (!response.ok) {
-            const message = await response.text();
+            const message = typeof payload === 'string'
+                ? payload
+                : payload.message || Object.values(payload.errors || {})?.flat()?.[0];
             throw new Error(message || 'Request gagal.');
         }
 
-        return response.json();
+        return payload;
     }
 
-    async function loadData() {
+    async function loadData(companyId = selectedCompanyId(), replaceUrl = true) {
         setBusy('Mengambil data stok...');
         const params = new URLSearchParams();
-        if (elements.companySelect.value) {
-            params.set('company_id', elements.companySelect.value);
+        if (companyId) {
+            params.set('company_id', companyId);
         }
         state = await request(`/stock-opname?${params.toString()}`);
+        syncCompanyUrl(state.currentCompanyId, replaceUrl);
         elements.loadingState.hidden = true;
         setSynced();
         render();
     }
 
     function setBusy(message) {
+        if (!elements.syncStatus) return;
+
         elements.syncStatus.textContent = message;
         elements.syncStatus.className = 'rounded-md bg-[var(--panel-soft)] px-3 py-2 text-xs font-bold text-[var(--muted)]';
     }
 
     function setSynced() {
+        if (!elements.syncStatus) return;
+
         elements.syncStatus.textContent = 'Tersimpan di database';
         elements.syncStatus.className = 'rounded-md bg-[var(--panel-soft)] px-3 py-2 text-xs font-bold text-[var(--brand)]';
     }
 
+    function setNeedsAttention() {
+        if (!elements.syncStatus) return;
+
+        elements.syncStatus.textContent = 'Perlu dicek';
+        elements.syncStatus.className = 'rounded-md bg-[var(--panel-soft)] px-3 py-2 text-xs font-bold text-[var(--muted)]';
+    }
+
     function setError(error) {
-        elements.loadingState.hidden = false;
-        elements.loadingState.textContent = 'Gagal memuat data. Cek koneksi database dan coba refresh.';
-        elements.syncStatus.textContent = 'Database error';
-        elements.syncStatus.className = 'rounded-md bg-[#fdecec] px-3 py-2 text-xs font-bold text-[#a12020]';
+        const message = error?.message || 'Gagal sinkronisasi. Cek koneksi database dan coba lagi.';
+        showAlert(message, 'error');
+        if (!state.companies.length && !state.products.length) {
+            elements.loadingState.hidden = false;
+            elements.loadingState.textContent = 'Data belum dapat ditampilkan.';
+        }
+        setNeedsAttention();
         console.error(error);
+    }
+
+    function showAlert(message, type = 'error') {
+        window.clearTimeout(alertTimeout);
+
+        elements.alertRegion.innerHTML = `
+            <div class="alert-toast alert-toast-${type}">
+                <span>${escapeHtml(message)}</span>
+                <button type="button" aria-label="Tutup pesan" data-alert-close>&times;</button>
+            </div>
+        `;
+
+        alertTimeout = window.setTimeout(clearAlert, 4500);
+    }
+
+    function clearAlert() {
+        elements.alertRegion.innerHTML = '';
+    }
+
+    async function guardedRequest(key, callback) {
+        if (pendingActions.has(key)) {
+            return;
+        }
+
+        pendingActions.add(key);
+        renderPendingControls();
+
+        try {
+            await callback();
+        } finally {
+            pendingActions.delete(key);
+            renderPendingControls();
+        }
+    }
+
+    function renderPendingControls() {
+        document.querySelectorAll('[data-pending-key]').forEach((button) => {
+            button.disabled = pendingActions.has(button.dataset.pendingKey);
+        });
+
+        document.querySelectorAll('form button').forEach((button) => {
+            const belongsToEmptyMovementForm = button.closest('#movementForm') && state.products.length === 0;
+            button.disabled = pendingActions.size > 0 || belongsToEmptyMovementForm;
+        });
     }
 
     function getStatus(product) {
@@ -122,6 +216,7 @@ if (app) {
 
     function render() {
         renderCompanies();
+        renderHistoryLink();
         renderFilters();
         renderSummary();
         renderMovementOptions();
@@ -152,6 +247,14 @@ if (app) {
         elements.companySelect.value = String(state.currentCompanyId || '');
     }
 
+    function renderHistoryLink() {
+        if (!elements.historyLink || !state.currentCompanyId) return;
+
+        const url = new URL(elements.historyLink.href);
+        url.searchParams.set('company_id', state.currentCompanyId);
+        elements.historyLink.href = url.toString();
+    }
+
     function renderSummary() {
         const counts = state.products.reduce((carry, product) => {
             carry[getStatus(product)] += 1;
@@ -165,6 +268,10 @@ if (app) {
     }
 
     function renderMovementOptions() {
+        elements.movementForm.querySelectorAll('button, select, input').forEach((control) => {
+            control.disabled = state.products.length === 0;
+        });
+
         elements.movementProduct.innerHTML = state.products
             .map((product) => `<option value="${product.id}">${escapeHtml(product.name)} (${escapeHtml(product.unit)})</option>`)
             .join('');
@@ -174,7 +281,13 @@ if (app) {
         const products = filteredProducts();
 
         if (!products.length) {
-            elements.productList.innerHTML = '<div class="panel border-dashed p-6 text-center text-sm font-semibold text-[var(--muted)]">Tidak ada stok yang cocok dengan filter.</div>';
+            const isFilteredEmpty = state.products.length > 0;
+            elements.productList.innerHTML = `
+                <div class="empty-state">
+                    <p class="font-bold text-[var(--text)]">${isFilteredEmpty ? 'Tidak ada stok yang cocok.' : 'Belum ada stok untuk company ini.'}</p>
+                    <p class="mt-1 text-sm font-semibold text-[var(--muted)]">${isFilteredEmpty ? 'Ubah pencarian atau filter untuk melihat stok lain.' : 'Tambahkan master barang dulu, lalu tim gudang bisa mulai input opname dari mobile.'}</p>
+                </div>
+            `;
             return;
         }
 
@@ -199,10 +312,14 @@ if (app) {
                             <div class="rounded-md bg-[var(--panel-soft)] p-2"><span class="text-xs font-bold text-[var(--muted)]">Selisih</span><strong class="block text-lg text-[var(--text)]">${diff > 0 ? '+' : ''}${diff}</strong></div>
                         </div>
                     </div>
-                    <div class="grid grid-cols-3 gap-2 border-t border-[var(--line)] p-3">
-                        <button class="stock-action" data-action="quick-in" data-id="${product.id}" type="button">+1</button>
-                        <button class="stock-action" data-action="quick-out" data-id="${product.id}" type="button">-1</button>
-                        <button class="stock-action" data-action="sync" data-id="${product.id}" type="button">Samakan</button>
+                    <div class="grid gap-2 border-t border-[var(--line)] p-3 sm:grid-cols-[1fr_auto_auto_auto]">
+                        <div class="grid grid-cols-[1fr_auto] gap-2">
+                            <input class="field min-h-10 py-2" inputmode="numeric" min="0" data-count-input="${product.id}" type="number" placeholder="Qty opname" />
+                            <button class="stock-action bg-[var(--brand)] text-white disabled:cursor-not-allowed disabled:opacity-50" data-action="count" data-id="${product.id}" data-pending-key="count:${product.id}" type="button">Input</button>
+                        </div>
+                        <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="quick-in" data-id="${product.id}" data-pending-key="quick-in:${product.id}" type="button">+1</button>
+                        <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="quick-out" data-id="${product.id}" data-pending-key="quick-out:${product.id}" type="button">-1</button>
+                        <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="sync" data-id="${product.id}" data-pending-key="sync:${product.id}" type="button">Samakan</button>
                     </div>
                 </article>
             `;
@@ -211,7 +328,7 @@ if (app) {
 
     function renderActivities() {
         const rows = state.activities.slice(0, 8).map((activity) => {
-            const kindText = { in: 'Tambah', out: 'Minus', count: 'Hitung fisik', sync: 'Samakan', create: 'Barang baru' }[activity.kind] || activity.kind;
+            const kindText = { in: 'Tambah', out: 'Minus', count: 'Input opname', sync: 'Samakan', create: 'Barang baru' }[activity.kind] || activity.kind;
             const time = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(activity.at));
 
             return `
@@ -232,8 +349,6 @@ if (app) {
 
     function sessionPayload() {
         return {
-            location: elements.sessionLocation.value,
-            officer: elements.sessionOfficer.value,
             company_id: Number(elements.companySelect.value || state.currentCompanyId),
         };
     }
@@ -248,102 +363,142 @@ if (app) {
         }[char]));
     }
 
-    elements.productForm.addEventListener('submit', async (event) => {
+    elements.productForm?.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const data = new FormData(event.currentTarget);
+        const form = event.currentTarget;
+        const data = new FormData(form);
 
-        try {
-            setBusy('Menyimpan barang...');
-            state = await request('/stock-opname/items', {
-                method: 'POST',
-                body: JSON.stringify({
-                    name: data.get('name'),
-                    type: data.get('type'),
-                    unit: data.get('unit'),
-                    system_stock: Number(data.get('systemStock') || 0),
-                    actual_stock: Number(data.get('actualStock') || 0),
-                    ...sessionPayload(),
-                }),
-            });
-            event.currentTarget.reset();
-            setSynced();
-            render();
-        } catch (error) {
-            setError(error);
-        }
+        guardedRequest('product-form', async () => {
+            try {
+                setBusy('Menyimpan barang...');
+                state = await request('/stock-opname/items', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        name: data.get('name'),
+                        type: data.get('type'),
+                        unit: data.get('unit'),
+                        system_stock: Number(data.get('systemStock') || 0),
+                        actual_stock: Number(data.get('actualStock') || 0),
+                        ...sessionPayload(),
+                    }),
+                });
+                form.reset();
+                setSynced();
+                render();
+            } catch (error) {
+                setError(error);
+            }
+        });
     });
 
-    elements.companyForm.addEventListener('submit', async (event) => {
+    elements.companyForm?.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const data = new FormData(event.currentTarget);
+        const form = event.currentTarget;
+        const data = new FormData(form);
 
-        try {
-            setBusy('Membuat company...');
-            state = await request('/stock-opname/companies', {
-                method: 'POST',
-                body: JSON.stringify({ name: data.get('name') }),
-            });
-            event.currentTarget.reset();
-            setSynced();
-            render();
-        } catch (error) {
-            setError(error);
-        }
+        guardedRequest('company-form', async () => {
+            try {
+                setBusy('Membuat company...');
+                state = await request('/stock-opname/companies', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        name: data.get('name'),
+                        location: data.get('location'),
+                        pic_user_id: data.get('pic_user_id') || null,
+                    }),
+                });
+                if (state.requestAccepted) {
+                    form.reset();
+                    state = state.payload;
+                    showAlert('Request company dikirim. Admin perlu approve sebelum client aktif.', 'success');
+                    setSynced();
+                    render();
+                    return;
+                }
+
+                form.reset();
+                const companyId = state.currentCompanyId;
+                syncCompanyUrl(companyId);
+                setBusy('Memuat company baru...');
+                await loadData(companyId, false);
+            } catch (error) {
+                setError(error);
+            }
+        });
     });
 
     elements.movementForm.addEventListener('submit', async (event) => {
         event.preventDefault();
-        const data = new FormData(event.currentTarget);
+        const form = event.currentTarget;
+        const data = new FormData(form);
 
-        try {
-            setBusy('Mencatat gerak...');
-            state = await request('/stock-opname/movements', {
-                method: 'POST',
-                body: JSON.stringify({
-                    stock_item_id: Number(data.get('productId')),
-                    kind: data.get('kind'),
-                    quantity: Number(data.get('qty') || 0),
-                    note: data.get('note'),
-                    ...sessionPayload(),
-                }),
-            });
-            event.currentTarget.reset();
-            setSynced();
-            render();
-        } catch (error) {
-            setError(error);
-        }
+        guardedRequest('movement-form', async () => {
+            try {
+                setBusy('Mencatat gerak...');
+                state = await request('/stock-opname/movements', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        stock_item_id: Number(data.get('productId')),
+                        kind: data.get('kind'),
+                        quantity: Number(data.get('qty') || 0),
+                        note: data.get('note'),
+                        ...sessionPayload(),
+                    }),
+                });
+                form.reset();
+                setSynced();
+                render();
+            } catch (error) {
+                setError(error);
+            }
+        });
     });
 
     elements.productList.addEventListener('click', async (event) => {
         const button = event.target.closest('button[data-action]');
         if (!button) return;
 
-        const kind = { 'quick-in': 'in', 'quick-out': 'out', sync: 'sync' }[button.dataset.action];
-        const quantity = button.dataset.action === 'sync' ? 0 : 1;
+        const countInput = elements.productList.querySelector(`[data-count-input="${button.dataset.id}"]`);
+        const kind = { 'quick-in': 'in', 'quick-out': 'out', count: 'count', sync: 'sync' }[button.dataset.action];
+        const quantity = button.dataset.action === 'sync'
+            ? 0
+            : button.dataset.action === 'count'
+                ? Number(countInput?.value || 0)
+                : 1;
 
-        try {
-            setBusy('Sinkronisasi...');
-            state = await request('/stock-opname/movements', {
-                method: 'POST',
-                body: JSON.stringify({
-                    stock_item_id: Number(button.dataset.id),
-                    kind,
-                    quantity,
-                    note: button.dataset.action === 'sync' ? 'Disamakan dengan sistem' : 'Quick action',
-                    ...sessionPayload(),
-                }),
-            });
-            setSynced();
-            render();
-        } catch (error) {
-            setError(error);
+        if (button.dataset.action === 'count' && quantity < 1) {
+            setError(new Error('Qty opname minimal 1.'));
+            countInput?.focus();
+            return;
         }
+
+        guardedRequest(`${button.dataset.action}:${button.dataset.id}`, async () => {
+            try {
+                setBusy('Sinkronisasi...');
+                state = await request('/stock-opname/movements', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        stock_item_id: Number(button.dataset.id),
+                        kind,
+                        quantity,
+                        note: button.dataset.action === 'sync' ? 'Disamakan dengan sistem' : 'Input dari kartu stok',
+                        ...sessionPayload(),
+                    }),
+                });
+                if (button.dataset.action === 'count') {
+                    countInput.value = '';
+                }
+                setSynced();
+                render();
+            } catch (error) {
+                setError(error);
+            }
+        });
     });
 
     elements.searchInput.addEventListener('input', renderProducts);
     elements.companySelect.addEventListener('change', () => {
-        loadData().catch(setError);
+        loadData(Number(elements.companySelect.value), false).catch(setError);
     });
     elements.typeFilter.addEventListener('change', renderProducts);
     elements.statusFilter.addEventListener('change', renderProducts);
@@ -353,6 +508,26 @@ if (app) {
     });
     elements.themeToggle.addEventListener('click', () => {
         applyTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark');
+        setMenuOpen(false);
+    });
+    elements.navMenuToggle?.addEventListener('click', () => {
+        setMenuOpen(!elements.navActions?.classList.contains('is-open'));
+    });
+    elements.navActions?.addEventListener('click', (event) => {
+        if (event.target.closest('a, button')) {
+            setMenuOpen(false);
+        }
+    });
+    elements.alertRegion?.addEventListener('click', (event) => {
+        if (event.target.closest('[data-alert-close]')) {
+            window.clearTimeout(alertTimeout);
+            clearAlert();
+        }
+    });
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest('#navActions, #navMenuToggle')) {
+            setMenuOpen(false);
+        }
     });
 
     applyTheme(localStorage.getItem('gosyen-stock-theme') || 'light');

@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\View\View;
 
 class StockOpnameController extends Controller
 {
@@ -20,18 +21,29 @@ class StockOpnameController extends Controller
 
     public function storeItem(Request $request): JsonResponse
     {
+        $request->merge([
+            'name' => Str::of($request->input('name', ''))->squish()->toString(),
+            'type' => Str::of($request->input('type', ''))->squish()->toString(),
+            'unit' => Str::of($request->input('unit', ''))->squish()->toString(),
+        ]);
+
         $data = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
-            'name' => ['required', 'string', 'max:255'],
+            'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->where('status', 'approved')],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('stock_items', 'name')->where('company_id', $request->integer('company_id')),
+            ],
             'type' => ['required', 'string', 'max:255'],
             'unit' => ['required', 'string', 'max:32'],
             'system_stock' => ['required', 'integer', 'min:0'],
             'actual_stock' => ['required', 'integer', 'min:0'],
-            'location' => ['nullable', 'string', 'max:255'],
-            'officer' => ['nullable', 'string', 'max:255'],
+        ], [
+            'name.unique' => 'Nama stok ini sudah ada di company aktif.',
         ]);
 
-        DB::transaction(function () use ($data): void {
+        DB::transaction(function () use ($data, $request): void {
             $company = Company::lockForUpdate()->findOrFail($data['company_id']);
             $type = $this->displayTypeForCompany($company, $data['type']);
             $item = StockItem::create([
@@ -45,7 +57,7 @@ class StockOpnameController extends Controller
                 'actual_stock' => $data['actual_stock'],
             ]);
 
-            $this->recordMovement($item, 'create', $data['actual_stock'], $data, 'Barang baru');
+            $this->recordMovement($item, 'create', $data['actual_stock'], $this->movementMeta($request, $company), 'Barang baru');
         });
 
         return response()->json($this->payload((int) $data['company_id']), 201);
@@ -54,16 +66,15 @@ class StockOpnameController extends Controller
     public function storeMovement(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'company_id' => ['required', 'integer', 'exists:companies,id'],
+            'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->where('status', 'approved')],
             'stock_item_id' => ['required', 'integer', 'exists:stock_items,id'],
             'kind' => ['required', Rule::in(['in', 'out', 'count', 'sync'])],
-            'quantity' => ['required', 'integer', 'min:0'],
-            'location' => ['nullable', 'string', 'max:255'],
-            'officer' => ['nullable', 'string', 'max:255'],
+            'quantity' => ['required', 'integer', Rule::when($request->input('kind') === 'sync', ['min:0'], ['min:1'])],
             'note' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        DB::transaction(function () use ($data): void {
+        DB::transaction(function () use ($data, $request): void {
+            $company = Company::query()->findOrFail($data['company_id']);
             $item = StockItem::query()
                 ->where('company_id', $data['company_id'])
                 ->lockForUpdate()
@@ -79,7 +90,7 @@ class StockOpnameController extends Controller
             }
 
             if ($data['kind'] === 'count') {
-                $item->actual_stock = $quantity;
+                $item->actual_stock += $quantity;
             }
 
             if ($data['kind'] === 'sync') {
@@ -87,7 +98,7 @@ class StockOpnameController extends Controller
                 $item->actual_stock = $item->system_stock;
             }
 
-            $this->recordMovement($item, $data['kind'], $quantity, $data, $data['note'] ?? null);
+            $this->recordMovement($item, $data['kind'], $quantity, $this->movementMeta($request, $company), $data['note'] ?? null);
             $item->save();
         });
 
@@ -96,10 +107,10 @@ class StockOpnameController extends Controller
 
     public function export(Request $request)
     {
-        $company = Company::query()->findOrFail($request->query('company_id'));
+        $company = Company::query()->where('status', 'approved')->findOrFail($request->query('company_id'));
         $exportedAt = now()->timezone(config('app.timezone'))->format('Y-m-d H:i:s');
-        $location = $request->query('location', 'Gudang Utama');
-        $officer = $request->query('officer', 'Tim Gosyen');
+        $location = $company->location ?: 'Gudang Utama';
+        $officer = $request->user()->name;
         $filename = 'stock-opname-'.$company->code_prefix.'-'.now()->format('Y-m-d').'.csv';
         $headers = [
             'Content-Type' => 'text/csv; charset=UTF-8',
@@ -108,25 +119,32 @@ class StockOpnameController extends Controller
 
         return response()->streamDownload(function () use ($company, $exportedAt, $location, $officer): void {
             $handle = fopen('php://output', 'w');
-            fputcsv($handle, ['Tanggal Export', 'Company', 'Lokasi', 'Petugas', 'Kode', 'Nama Barang', 'Tipe', 'Satuan', 'Stok Sistem', 'Stok Fisik', 'Selisih', 'Status']);
+            fwrite($handle, "\xEF\xBB\xBF");
+            fputcsv($handle, ['Company', $company->name]);
+            fputcsv($handle, ['Tanggal Export', $exportedAt]);
+            fputcsv($handle, ['Lokasi', $location]);
+            fputcsv($handle, ['Petugas', $officer]);
+            fputcsv($handle, []);
+            fputcsv($handle, ['No.', 'Kode Barang', 'Nama Barang', 'Stock Program', 'Opname', 'Selisih', 'Ket']);
 
-            StockItem::query()->where('company_id', $company->id)->orderBy('type')->orderBy('name')->each(function (StockItem $item) use ($handle, $company, $exportedAt, $location, $officer): void {
-                $diff = $item->actual_stock - $item->system_stock;
-                fputcsv($handle, [
-                    $exportedAt,
-                    $company->name,
-                    $location,
-                    $officer,
-                    $item->code,
-                    $item->name,
-                    $item->type,
-                    $item->unit,
-                    $item->system_stock,
-                    $item->actual_stock,
-                    $diff,
-                    $this->statusLabel($diff),
-                ]);
-            });
+            $rowNumber = 1;
+
+            StockItem::query()
+                ->with(['movements' => fn ($query) => $query->whereIn('kind', ['count', 'in', 'out'])->oldest()])
+                ->where('company_id', $company->id)
+                ->orderBy('code')
+                ->each(function (StockItem $item) use ($handle, &$rowNumber): void {
+                    $diff = $item->actual_stock - $item->system_stock;
+                    fputcsv($handle, [
+                        $rowNumber++,
+                        $item->code,
+                        $item->name,
+                        $this->formatExportNumber($item->system_stock),
+                        $this->formatExportNumber($item->actual_stock),
+                        $this->formatExportNumber($diff),
+                        $this->exportNote($item),
+                    ]);
+                });
 
             fclose($handle);
         }, $filename, $headers);
@@ -134,25 +152,81 @@ class StockOpnameController extends Controller
 
     public function storeCompany(Request $request): JsonResponse
     {
-        $data = $request->validate([
-            'name' => ['required', 'string', 'max:255', 'unique:companies,name'],
+        $request->merge([
+            'name' => Str::of($request->input('name', ''))->squish()->toString(),
+            'location' => Str::of($request->input('location', ''))->squish()->toString(),
         ]);
 
-        $company = Company::create([
-            'name' => $data['name'],
-            'code_prefix' => $this->nextCompanyPrefix($data['name']),
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:255', 'unique:companies,name'],
+            'location' => ['nullable', 'string', 'max:255'],
+            'pic_user_id' => ['nullable', 'integer', 'exists:users,id'],
+        ], [
+            'name.required' => 'Nama company wajib diisi.',
+            'name.unique' => 'Company dengan nama ini sudah ada.',
         ]);
+
+        $company = DB::transaction(function () use ($data, $request): Company {
+            Company::query()->lockForUpdate()->get(['id']);
+
+            return Company::create([
+                'name' => $data['name'],
+                'location' => $data['location'] ?: null,
+                'pic_user_id' => $data['pic_user_id'] ?? null,
+                'code_prefix' => $this->nextCompanyPrefix($data['name']),
+                'next_stock_number' => 1,
+                'status' => $request->user()->isAdmin() ? 'approved' : 'pending',
+                'requested_by_user_id' => $request->user()->id,
+                'approved_by_user_id' => $request->user()->isAdmin() ? $request->user()->id : null,
+                'approved_at' => $request->user()->isAdmin() ? now() : null,
+            ]);
+        });
+
+        if ($company->status === 'pending') {
+            return response()->json([
+                'requestAccepted' => true,
+                'message' => 'Request company dikirim. Admin perlu approve sebelum client aktif.',
+                'payload' => $this->payload(),
+            ], 202);
+        }
 
         return response()->json($this->payload($company->id));
     }
 
+    public function history(Request $request): View
+    {
+        $companyId = $request->integer('company_id') ?: Company::query()->where('status', 'approved')->orderBy('name')->value('id');
+        $from = $request->query('from');
+        $to = $request->query('to');
+
+        $movements = StockMovement::query()
+            ->select('stock_movements.*')
+            ->join('stock_items', 'stock_items.id', '=', 'stock_movements.stock_item_id')
+            ->with('stockItem:id,code,name,unit')
+            ->where('stock_items.company_id', $companyId)
+            ->when($from, fn ($query) => $query->whereDate('stock_movements.created_at', '>=', $from))
+            ->when($to, fn ($query) => $query->whereDate('stock_movements.created_at', '<=', $to))
+            ->latest('stock_movements.created_at')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('stock-opname.history', [
+            'companies' => Company::query()->where('status', 'approved')->orderBy('name')->get(['id', 'name', 'code_prefix']),
+            'currentCompanyId' => $companyId,
+            'movements' => $movements,
+            'from' => $from,
+            'to' => $to,
+        ]);
+    }
+
     private function payload(?int $companyId = null): array
     {
-        $companyId = $companyId ?: Company::query()->orderBy('name')->value('id');
+        $companyId = $companyId ?: Company::query()->where('status', 'approved')->orderBy('name')->value('id');
 
         $items = StockItem::query()
+            ->select(['id', 'code', 'company_id', 'name', 'type', 'normalized_type', 'unit', 'system_stock', 'actual_stock', 'updated_at'])
             ->where('company_id', $companyId)
-            ->orderBy('type')
+            ->orderBy('code')
             ->orderBy('name')
             ->get()
             ->map(fn (StockItem $item): array => [
@@ -169,9 +243,11 @@ class StockOpnameController extends Controller
             ]);
 
         $movements = StockMovement::query()
+            ->select('stock_movements.*')
+            ->join('stock_items', 'stock_items.id', '=', 'stock_movements.stock_item_id')
             ->with('stockItem:id,name,unit')
-            ->whereHas('stockItem', fn ($query) => $query->where('company_id', $companyId))
-            ->latest()
+            ->where('stock_items.company_id', $companyId)
+            ->latest('stock_movements.created_at')
             ->limit(20)
             ->get()
             ->map(fn (StockMovement $movement): array => [
@@ -188,7 +264,10 @@ class StockOpnameController extends Controller
             ]);
 
         return [
-            'companies' => Company::query()->orderBy('name')->get(['id', 'name', 'code_prefix']),
+            'companies' => Company::query()
+                ->where('status', 'approved')
+                ->orderBy('name')
+                ->get(['id', 'name', 'location', 'pic_user_id', 'code_prefix']),
             'currentCompanyId' => $companyId,
             'products' => $items,
             'activities' => $movements,
@@ -211,14 +290,22 @@ class StockOpnameController extends Controller
         ]);
     }
 
+    private function movementMeta(Request $request, Company $company): array
+    {
+        return [
+            'location' => $company->location,
+            'officer' => $request->user()->name,
+        ];
+    }
+
     private function nextCode(Company $company): string
     {
-        $nextId = StockItem::query()->where('company_id', $company->id)->count() + 1;
-
         do {
-            $code = sprintf('%s-%03d', $company->code_prefix, $nextId);
-            $nextId++;
+            $code = sprintf('%s-%04d', $company->code_prefix, $company->next_stock_number);
+            $company->next_stock_number++;
         } while (StockItem::query()->where('code', $code)->exists());
+
+        $company->save();
 
         return $code;
     }
@@ -261,5 +348,32 @@ class StockOpnameController extends Controller
             $diff < 0 => 'Kurang',
             default => 'Sesuai',
         };
+    }
+
+    private function exportNote(StockItem $item): string
+    {
+        $entries = $item->movements
+            ->where('kind', 'count')
+            ->map(fn (StockMovement $movement): string => sprintf(
+                '%s: %s %s oleh %s%s',
+                $movement->created_at?->timezone(config('app.timezone'))->format('d/m/Y H:i'),
+                $this->formatExportNumber($movement->quantity),
+                $item->unit,
+                $movement->officer ?: '-',
+                $movement->location ? ' @ '.$movement->location : ''
+            ));
+
+        if ($entries->isEmpty()) {
+            return $this->statusLabel($item->actual_stock - $item->system_stock);
+        }
+
+        return $entries->count().' input opname: '.$entries->implode('; ');
+    }
+
+    private function formatExportNumber(int $value): string
+    {
+        $formatted = number_format(abs($value), 2, ',', '.');
+
+        return $value < 0 ? "({$formatted})" : $formatted;
     }
 }
