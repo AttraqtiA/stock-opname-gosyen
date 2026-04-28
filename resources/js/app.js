@@ -1,5 +1,33 @@
 import './bootstrap';
 
+document.querySelectorAll('[data-nav-menu-toggle]').forEach((toggle) => {
+    const target = document.querySelector(toggle.dataset.navMenuToggle);
+    if (!target) return;
+
+    function setOpen(isOpen) {
+        target.classList.toggle('is-open', isOpen);
+        toggle.setAttribute('aria-expanded', String(isOpen));
+        toggle.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
+    }
+
+    toggle.addEventListener('click', (event) => {
+        event.stopPropagation();
+        setOpen(!target.classList.contains('is-open'));
+    });
+
+    target.addEventListener('click', (event) => {
+        if (event.target.closest('a, button')) {
+            setOpen(false);
+        }
+    });
+
+    document.addEventListener('click', (event) => {
+        if (!event.target.closest(`${toggle.dataset.navMenuToggle}, [data-nav-menu-toggle]`)) {
+            setOpen(false);
+        }
+    });
+});
+
 const app = document.querySelector('#stock-app');
 
 if (app) {
@@ -30,6 +58,7 @@ if (app) {
     };
     let state = { companies: [], currentCompanyId: null, products: [], activities: [] };
     const pendingActions = new Set();
+    const quickConfirmations = new Map();
     let alertTimeout;
 
     function selectedCompanyId() {
@@ -54,12 +83,6 @@ if (app) {
         elements.themeToggle.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
         elements.themeToggle.querySelector('.theme-icon-moon')?.classList.toggle('hidden', theme === 'dark');
         elements.themeToggle.querySelector('.theme-icon-sun')?.classList.toggle('hidden', theme !== 'dark');
-    }
-
-    function setMenuOpen(isOpen) {
-        elements.navActions?.classList.toggle('is-open', isOpen);
-        elements.navMenuToggle?.setAttribute('aria-expanded', String(isOpen));
-        elements.navMenuToggle?.setAttribute('aria-label', isOpen ? 'Close menu' : 'Open menu');
     }
 
     async function request(url, options = {}) {
@@ -335,7 +358,8 @@ if (app) {
                 <div class="grid gap-1 p-4 sm:grid-cols-[1fr_auto] sm:items-center">
                     <div>
                         <p class="font-bold text-[var(--text)]">${escapeHtml(activity.productName || 'Produk dihapus')}</p>
-                        <p class="text-sm text-[var(--muted)]">${kindText} · ${activity.qty} ${activity.unit || ''}${activity.note ? ` · ${escapeHtml(activity.note)}` : ''}</p>
+                        <p class="text-sm text-[var(--muted)]">${kindText} · ${activity.qty} ${activity.unit || ''} · ${escapeHtml(activity.accountName || activity.officer || '-')}</p>
+                        ${activity.note ? `<p class="text-xs font-semibold text-[var(--muted)]">${escapeHtml(activity.note)}</p>` : ''}
                     </div>
                     <time class="text-xs font-bold text-[var(--brand)]">${time}</time>
                 </div>
@@ -466,6 +490,28 @@ if (app) {
                 ? Number(countInput?.value || 0)
                 : 1;
 
+        if (button.dataset.action === 'quick-in' || button.dataset.action === 'quick-out') {
+            const confirmationKey = `${button.dataset.action}:${button.dataset.id}`;
+            const now = Date.now();
+            const confirmedUntil = quickConfirmations.get(confirmationKey) || 0;
+
+            if (confirmedUntil < now) {
+                quickConfirmations.set(confirmationKey, now + 3000);
+                const originalText = button.textContent;
+                button.textContent = 'Tap lagi';
+                button.classList.add('border-[var(--brand)]', 'text-[var(--brand)]');
+                window.setTimeout(() => {
+                    if ((quickConfirmations.get(confirmationKey) || 0) <= Date.now()) {
+                        button.textContent = originalText;
+                        button.classList.remove('border-[var(--brand)]', 'text-[var(--brand)]');
+                    }
+                }, 3100);
+                return;
+            }
+
+            quickConfirmations.delete(confirmationKey);
+        }
+
         if (button.dataset.action === 'count' && quantity < 1) {
             setError(new Error('Qty opname minimal 1.'));
             countInput?.focus();
@@ -508,15 +554,7 @@ if (app) {
     });
     elements.themeToggle.addEventListener('click', () => {
         applyTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark');
-        setMenuOpen(false);
-    });
-    elements.navMenuToggle?.addEventListener('click', () => {
-        setMenuOpen(!elements.navActions?.classList.contains('is-open'));
-    });
-    elements.navActions?.addEventListener('click', (event) => {
-        if (event.target.closest('a, button')) {
-            setMenuOpen(false);
-        }
+        elements.navActions?.classList.remove('is-open');
     });
     elements.alertRegion?.addEventListener('click', (event) => {
         if (event.target.closest('[data-alert-close]')) {
@@ -524,12 +562,6 @@ if (app) {
             clearAlert();
         }
     });
-    document.addEventListener('click', (event) => {
-        if (!event.target.closest('#navActions, #navMenuToggle')) {
-            setMenuOpen(false);
-        }
-    });
-
     applyTheme(localStorage.getItem('gosyen-stock-theme') || 'light');
     loadData().catch(setError);
 }

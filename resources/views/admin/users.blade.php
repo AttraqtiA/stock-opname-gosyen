@@ -11,11 +11,24 @@
 <body class="min-h-screen">
     <header class="border-b border-[var(--line)] bg-[var(--header)]">
         <div class="mx-auto flex max-w-5xl items-center justify-between gap-3 px-4 py-4">
-            <div>
-                <p class="text-xs font-bold uppercase text-[var(--brand)]">Admin</p>
-                <h1 class="text-xl font-bold text-[var(--text)]">Approval Akun</h1>
+            <div class="flex min-w-0 items-center gap-3">
+                <img src="{{ asset('image/GosyenLogo.png') }}" alt="Gosyen" class="h-10 w-10 shrink-0 rounded-md border border-[var(--line)] object-contain p-1" />
+                <div class="min-w-0">
+                    <p class="text-xs font-bold uppercase text-[var(--brand)]">Admin</p>
+                    <h1 class="truncate text-xl font-bold text-[var(--text)]">Approval Akun</h1>
+                </div>
             </div>
-            <a href="{{ route('home') }}" class="rounded-md border border-[var(--line)] px-3 py-2 text-sm font-bold text-[var(--text)]">Stock Opname</a>
+            <div class="relative">
+                <button data-nav-menu-toggle="#adminUsersNav" class="grid h-10 w-10 place-items-center rounded-md border border-[var(--line)] bg-[var(--panel)] text-[var(--text)] transition hover:bg-[var(--panel-soft)] sm:hidden" type="button" aria-label="Open menu" aria-expanded="false">
+                    <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                </button>
+                <div id="adminUsersNav" class="nav-actions">
+                    <a href="{{ route('admin.companies') }}" class="nav-action">Clients</a>
+                    <a href="{{ route('home') }}" class="nav-action">Stock Opname</a>
+                </div>
+            </div>
         </div>
     </header>
 

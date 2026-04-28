@@ -130,7 +130,7 @@ class StockOpnameController extends Controller
             $rowNumber = 1;
 
             StockItem::query()
-                ->with(['movements' => fn ($query) => $query->whereIn('kind', ['count', 'in', 'out'])->oldest()])
+                ->with(['movements' => fn ($query) => $query->with('user:id,name,email')->whereIn('kind', ['count', 'in', 'out'])->oldest()])
                 ->where('company_id', $company->id)
                 ->orderBy('code')
                 ->each(function (StockItem $item) use ($handle, &$rowNumber): void {
@@ -202,7 +202,7 @@ class StockOpnameController extends Controller
         $movements = StockMovement::query()
             ->select('stock_movements.*')
             ->join('stock_items', 'stock_items.id', '=', 'stock_movements.stock_item_id')
-            ->with('stockItem:id,code,name,unit')
+            ->with(['stockItem:id,code,name,unit', 'user:id,name,email'])
             ->where('stock_items.company_id', $companyId)
             ->when($from, fn ($query) => $query->whereDate('stock_movements.created_at', '>=', $from))
             ->when($to, fn ($query) => $query->whereDate('stock_movements.created_at', '<=', $to))
@@ -245,7 +245,7 @@ class StockOpnameController extends Controller
         $movements = StockMovement::query()
             ->select('stock_movements.*')
             ->join('stock_items', 'stock_items.id', '=', 'stock_movements.stock_item_id')
-            ->with('stockItem:id,name,unit')
+            ->with(['stockItem:id,name,unit', 'user:id,name,email'])
             ->where('stock_items.company_id', $companyId)
             ->latest('stock_movements.created_at')
             ->limit(20)
@@ -259,6 +259,8 @@ class StockOpnameController extends Controller
                 'qty' => $movement->quantity,
                 'location' => $movement->location,
                 'officer' => $movement->officer,
+                'accountName' => $movement->user?->name,
+                'accountEmail' => $movement->user?->email,
                 'note' => $movement->note,
                 'at' => $movement->created_at?->toISOString(),
             ]);
@@ -278,6 +280,7 @@ class StockOpnameController extends Controller
     {
         StockMovement::create([
             'stock_item_id' => $item->id,
+            'user_id' => $data['user_id'] ?? null,
             'kind' => $kind,
             'quantity' => $quantity,
             'system_stock_before' => $item->getOriginal('system_stock') ?? $item->system_stock,
@@ -295,6 +298,7 @@ class StockOpnameController extends Controller
         return [
             'location' => $company->location,
             'officer' => $request->user()->name,
+            'user_id' => $request->user()->id,
         ];
     }
 
@@ -359,7 +363,7 @@ class StockOpnameController extends Controller
                 $movement->created_at?->timezone(config('app.timezone'))->format('d/m/Y H:i'),
                 $this->formatExportNumber($movement->quantity),
                 $item->unit,
-                $movement->officer ?: '-',
+                $movement->user?->name ?: ($movement->officer ?: '-'),
                 $movement->location ? ' @ '.$movement->location : ''
             ));
 

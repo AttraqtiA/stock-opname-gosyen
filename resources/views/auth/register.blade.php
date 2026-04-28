@@ -12,7 +12,8 @@
     <main class="mx-auto grid min-h-screen max-w-md place-items-center px-4">
         <form method="POST" action="{{ route('register.store') }}" class="panel w-full p-6">
             @csrf
-            <p class="text-sm font-bold uppercase text-[var(--brand)]">Gosyen</p>
+            <img src="{{ asset('image/GosyenLogo.png') }}" alt="Gosyen" class="h-12 w-12 rounded-md border border-[var(--line)] object-contain p-1" />
+            <p class="mt-4 text-sm font-bold uppercase text-[var(--brand)]">Gosyen</p>
             <h1 class="mt-1 text-2xl font-bold text-[var(--text)]">Daftar Employee</h1>
             <p class="mt-2 text-sm text-[var(--muted)]">Akun baru perlu approval admin sebelum bisa mengakses database stok.</p>
 

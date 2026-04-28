@@ -20,9 +20,7 @@
         <header class="sticky top-0 z-30 border-b bg-[var(--header)]/95 backdrop-blur">
             <div class="mx-auto flex max-w-7xl items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-6 lg:px-8">
                 <div class="flex min-w-0 items-center gap-3">
-                    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-[var(--line)] bg-[var(--panel-soft)] text-[var(--brand)]">
-                        <span class="text-lg font-black">G</span>
-                    </div>
+                    <img src="{{ asset('image/GosyenLogo.png') }}" alt="Gosyen" class="h-10 w-10 shrink-0 rounded-md border border-[var(--line)] object-contain p-1" />
                     <div class="min-w-0">
                         <p class="text-xs font-bold uppercase text-[var(--brand)]">Gosyen</p>
                         <h1 class="truncate text-base font-bold text-[var(--text)] sm:text-xl">Stock Opname Pal</h1>
@@ -30,7 +28,7 @@
                 </div>
 
                 <div class="relative flex shrink-0 items-center gap-2">
-                    <button id="navMenuToggle" class="grid h-10 w-10 place-items-center rounded-md border border-[var(--line)] bg-[var(--panel)] text-[var(--text)] transition hover:bg-[var(--panel-soft)] sm:hidden" type="button" aria-label="Open menu" aria-expanded="false">
+                    <button id="navMenuToggle" data-nav-menu-toggle="#navActions" class="grid h-10 w-10 place-items-center rounded-md border border-[var(--line)] bg-[var(--panel)] text-[var(--text)] transition hover:bg-[var(--panel-soft)] sm:hidden" type="button" aria-label="Open menu" aria-expanded="false">
                         <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                             <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                         </svg>
