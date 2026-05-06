@@ -73,7 +73,7 @@
 
         <main class="mx-auto grid max-w-7xl items-start gap-3 px-3 py-3 sm:gap-4 sm:px-6 lg:grid-cols-[360px_1fr] lg:px-8">
             <section class="grid auto-rows-max gap-4 lg:sticky lg:top-24 lg:self-start">
-                <div class="panel p-4">
+                <div class="panel form-panel form-panel-company p-4">
                     <p class="text-sm font-semibold text-[var(--muted)]">Client company</p>
                     <div class="mt-3 grid gap-3">
                         <label class="block">
@@ -108,13 +108,12 @@
                     </div>
                 </div>
 
-                <form id="productForm" class="panel p-4">
+                <form id="productForm" class="panel form-panel form-panel-product p-4">
                     <div class="flex items-center justify-between gap-3">
                         <div>
                             <p class="text-sm font-semibold text-[var(--muted)]">Tambah barang</p>
                             <h2 class="text-xl font-bold text-[var(--text)]">Produk baru</h2>
                         </div>
-                        <span class="rounded-md bg-[var(--panel-soft)] px-2 py-1 text-xs font-bold text-[var(--brand)]">Master</span>
                     </div>
 
                     <div class="mt-4 grid gap-3">
@@ -148,7 +147,7 @@
                     </div>
                 </form>
 
-                <form id="movementForm" class="panel p-4">
+                <form id="movementForm" class="panel form-panel form-panel-movement p-4">
                     <p class="text-sm font-semibold text-[var(--muted)]">Input manual</p>
                     <h2 class="text-xl font-bold text-[var(--text)]">Opname / Mutasi</h2>
                     <div class="mt-4 grid gap-3">

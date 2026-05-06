@@ -38,6 +38,8 @@ Route::middleware('auth')->prefix('stock-opname')->group(function (): void {
     Route::get('/', [StockOpnameController::class, 'index'])->name('stock-opname.index');
     Route::post('/companies', [StockOpnameController::class, 'storeCompany'])->name('stock-opname.companies.store');
     Route::post('/items', [StockOpnameController::class, 'storeItem'])->name('stock-opname.items.store');
+    Route::patch('/items/{stockItem}', [StockOpnameController::class, 'updateItem'])->name('stock-opname.items.update');
+    Route::delete('/items/{stockItem}', [StockOpnameController::class, 'destroyItem'])->name('stock-opname.items.destroy');
     Route::post('/movements', [StockOpnameController::class, 'storeMovement'])->name('stock-opname.movements.store');
     Route::get('/history', [StockOpnameController::class, 'history'])->name('stock-opname.history');
     Route::get('/export', [StockOpnameController::class, 'export'])->name('stock-opname.export');

@@ -105,6 +105,48 @@ class StockOpnameController extends Controller
         return response()->json($this->payload((int) $data['company_id']));
     }
 
+    public function updateItem(Request $request, StockItem $stockItem): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->where('status', 'approved')],
+            'system_stock' => ['required', 'integer', 'min:0'],
+        ]);
+
+        DB::transaction(function () use ($data, $request, $stockItem): void {
+            $company = Company::query()->findOrFail($data['company_id']);
+            $item = StockItem::query()
+                ->where('company_id', $company->id)
+                ->lockForUpdate()
+                ->findOrFail($stockItem->id);
+
+            $item->system_stock = (int) $data['system_stock'];
+            $this->recordMovement($item, 'update', 0, $this->movementMeta($request, $company), 'Edit stok sistem');
+            $item->save();
+        });
+
+        return response()->json($this->payload((int) $data['company_id']));
+    }
+
+    public function destroyItem(Request $request, StockItem $stockItem): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->where('status', 'approved')],
+        ]);
+
+        DB::transaction(function () use ($data, $request, $stockItem): void {
+            $company = Company::query()->findOrFail($data['company_id']);
+            $item = StockItem::query()
+                ->where('company_id', $company->id)
+                ->lockForUpdate()
+                ->findOrFail($stockItem->id);
+
+            $this->recordMovement($item, 'delete', 0, $this->movementMeta($request, $company), 'Produk dihapus dari stok aktif');
+            $item->delete();
+        });
+
+        return response()->json($this->payload((int) $data['company_id']));
+    }
+
     public function export(Request $request)
     {
         $company = Company::query()->where('status', 'approved')->findOrFail($request->query('company_id'));
@@ -248,7 +290,7 @@ class StockOpnameController extends Controller
             ->with(['stockItem:id,name,unit', 'user:id,name,email'])
             ->where('stock_items.company_id', $companyId)
             ->latest('stock_movements.created_at')
-            ->limit(20)
+            ->limit(10)
             ->get()
             ->map(fn (StockMovement $movement): array => [
                 'id' => $movement->id,
@@ -259,6 +301,7 @@ class StockOpnameController extends Controller
                 'qty' => $movement->quantity,
                 'location' => $movement->location,
                 'officer' => $movement->officer,
+                'actorName' => $movement->user?->name ?: $movement->officer,
                 'accountName' => $movement->user?->name,
                 'accountEmail' => $movement->user?->email,
                 'note' => $movement->note,

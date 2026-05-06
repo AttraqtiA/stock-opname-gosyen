@@ -58,7 +58,6 @@ if (app) {
     };
     let state = { companies: [], currentCompanyId: null, products: [], activities: [] };
     const pendingActions = new Set();
-    const quickConfirmations = new Map();
     let alertTimeout;
 
     function selectedCompanyId() {
@@ -335,7 +334,7 @@ if (app) {
                             <div class="rounded-md bg-[var(--panel-soft)] p-2"><span class="text-xs font-bold text-[var(--muted)]">Selisih</span><strong class="block text-lg text-[var(--text)]">${diff > 0 ? '+' : ''}${diff}</strong></div>
                         </div>
                     </div>
-                    <div class="grid gap-2 border-t border-[var(--line)] p-3 sm:grid-cols-[1fr_auto_auto_auto]">
+                    <div class="grid gap-2 border-t border-[var(--line)] p-3 sm:grid-cols-[1fr_auto_auto_auto_auto_auto]">
                         <div class="grid grid-cols-[1fr_auto] gap-2">
                             <input class="field min-h-10 py-2" inputmode="numeric" min="0" data-count-input="${product.id}" type="number" placeholder="Qty opname" />
                             <button class="stock-action bg-[var(--brand)] text-white disabled:cursor-not-allowed disabled:opacity-50" data-action="count" data-id="${product.id}" data-pending-key="count:${product.id}" type="button">Input</button>
@@ -343,6 +342,8 @@ if (app) {
                         <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="quick-in" data-id="${product.id}" data-pending-key="quick-in:${product.id}" type="button">+1</button>
                         <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="quick-out" data-id="${product.id}" data-pending-key="quick-out:${product.id}" type="button">-1</button>
                         <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="sync" data-id="${product.id}" data-pending-key="sync:${product.id}" type="button">Samakan</button>
+                        <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="edit-system" data-id="${product.id}" data-system-stock="${product.systemStock}" data-pending-key="edit-system:${product.id}" type="button">Edit</button>
+                        <button class="stock-action text-[#a12020] disabled:cursor-not-allowed disabled:opacity-50" data-action="delete-item" data-id="${product.id}" data-pending-key="delete-item:${product.id}" type="button">Hapus</button>
                     </div>
                 </article>
             `;
@@ -350,15 +351,16 @@ if (app) {
     }
 
     function renderActivities() {
-        const rows = state.activities.slice(0, 8).map((activity) => {
-            const kindText = { in: 'Tambah', out: 'Minus', count: 'Input opname', sync: 'Samakan', create: 'Barang baru' }[activity.kind] || activity.kind;
+        const rows = state.activities.slice(0, 10).map((activity) => {
+            const kindText = { in: 'Tambah', out: 'Minus', count: 'Input opname', sync: 'Samakan', create: 'Barang baru', update: 'Edit stok', delete: 'Hapus produk' }[activity.kind] || activity.kind;
             const time = new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(activity.at));
 
             return `
                 <div class="grid gap-1 p-4 sm:grid-cols-[1fr_auto] sm:items-center">
                     <div>
                         <p class="font-bold text-[var(--text)]">${escapeHtml(activity.productName || 'Produk dihapus')}</p>
-                        <p class="text-sm text-[var(--muted)]">${kindText} · ${activity.qty} ${activity.unit || ''} · ${escapeHtml(activity.accountName || activity.officer || '-')}</p>
+                        <p class="text-sm text-[var(--muted)]">${kindText} · ${activity.qty} ${activity.unit || ''}</p>
+                        <p class="text-xs font-bold text-[var(--brand)]">Oleh ${escapeHtml(activity.actorName || activity.accountName || activity.officer || '-')}</p>
                         ${activity.note ? `<p class="text-xs font-semibold text-[var(--muted)]">${escapeHtml(activity.note)}</p>` : ''}
                     </div>
                     <time class="text-xs font-bold text-[var(--brand)]">${time}</time>
@@ -490,26 +492,63 @@ if (app) {
                 ? Number(countInput?.value || 0)
                 : 1;
 
-        if (button.dataset.action === 'quick-in' || button.dataset.action === 'quick-out') {
-            const confirmationKey = `${button.dataset.action}:${button.dataset.id}`;
-            const now = Date.now();
-            const confirmedUntil = quickConfirmations.get(confirmationKey) || 0;
+        if (button.dataset.action === 'edit-system') {
+            const productName = button.closest('.stock-card')?.querySelector('h3')?.textContent || 'stok ini';
+            const value = window.prompt(`Stok sistem baru untuk ${productName}:`, button.dataset.systemStock || '0');
+            if (value === null) return;
 
-            if (confirmedUntil < now) {
-                quickConfirmations.set(confirmationKey, now + 3000);
-                const originalText = button.textContent;
-                button.textContent = 'Tap lagi';
-                button.classList.add('border-[var(--brand)]', 'text-[var(--brand)]');
-                window.setTimeout(() => {
-                    if ((quickConfirmations.get(confirmationKey) || 0) <= Date.now()) {
-                        button.textContent = originalText;
-                        button.classList.remove('border-[var(--brand)]', 'text-[var(--brand)]');
-                    }
-                }, 3100);
+            const systemStock = Number(value);
+            if (!Number.isInteger(systemStock) || systemStock < 0) {
+                setError(new Error('Stok sistem harus angka bulat minimal 0.'));
                 return;
             }
 
-            quickConfirmations.delete(confirmationKey);
+            guardedRequest(`edit-system:${button.dataset.id}`, async () => {
+                try {
+                    setBusy('Mengedit stok sistem...');
+                    state = await request(`/stock-opname/items/${button.dataset.id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            system_stock: systemStock,
+                            ...sessionPayload(),
+                        }),
+                    });
+                    setSynced();
+                    render();
+                } catch (error) {
+                    setError(error);
+                }
+            });
+            return;
+        }
+
+        if (button.dataset.action === 'delete-item') {
+            const productName = button.closest('.stock-card')?.querySelector('h3')?.textContent || 'stok ini';
+            if (!window.confirm(`Hapus ${productName} dari stok aktif? Riwayatnya tetap tersimpan.`)) return;
+
+            guardedRequest(`delete-item:${button.dataset.id}`, async () => {
+                try {
+                    setBusy('Menghapus produk...');
+                    state = await request(`/stock-opname/items/${button.dataset.id}`, {
+                        method: 'DELETE',
+                        body: JSON.stringify(sessionPayload()),
+                    });
+                    setSynced();
+                    render();
+                } catch (error) {
+                    setError(error);
+                }
+            });
+            return;
+        }
+
+        if (['quick-in', 'quick-out', 'sync'].includes(button.dataset.action)) {
+            const actionLabel = { 'quick-in': 'tambah +1', 'quick-out': 'kurangi -1', sync: 'samakan dengan stok sistem' }[button.dataset.action];
+            const productName = button.closest('.stock-card')?.querySelector('h3')?.textContent || 'stok ini';
+
+            if (!window.confirm(`Konfirmasi ${actionLabel} untuk ${productName}?`)) {
+                return;
+            }
         }
 
         if (button.dataset.action === 'count' && quantity < 1) {
