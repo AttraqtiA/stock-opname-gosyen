@@ -325,7 +325,15 @@ if (app) {
                                 <span class="rounded-md bg-[var(--panel-soft)] px-2 py-1 text-xs font-bold text-[var(--muted)]">${escapeHtml(product.code)}</span>
                                 <span class="rounded-md px-2 py-1 text-xs font-bold ${statusClass(status)}">${statusLabel(status)}</span>
                             </div>
-                            <h3 class="mt-2 text-lg font-bold text-[var(--text)]">${escapeHtml(product.name)}</h3>
+                            <div class="product-title-row mt-2">
+                                <h3 class="min-w-0 text-lg font-bold text-[var(--text)]">${escapeHtml(product.name)}</h3>
+                                <button class="product-info-button disabled:cursor-not-allowed disabled:opacity-50" data-action="edit-info" data-id="${product.id}" data-type="${escapeHtml(product.type)}" data-unit="${escapeHtml(product.unit)}" data-pending-key="edit-info:${product.id}" type="button" aria-label="Edit tipe dan satuan ${escapeHtml(product.name)}">
+                                    <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                        <path d="M12 20h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                        <path d="m16.5 3.5 4 4L8 20H4v-4L16.5 3.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                            </div>
                             <p class="text-sm font-semibold text-[var(--muted)]">${escapeHtml(product.type)} · ${escapeHtml(product.unit)}</p>
                         </div>
                         <div class="grid grid-cols-3 gap-2 text-center md:min-w-[270px]">
@@ -334,16 +342,29 @@ if (app) {
                             <div class="rounded-md bg-[var(--panel-soft)] p-2"><span class="text-xs font-bold text-[var(--muted)]">Selisih</span><strong class="block text-lg text-[var(--text)]">${diff > 0 ? '+' : ''}${diff}</strong></div>
                         </div>
                     </div>
-                    <div class="grid gap-2 border-t border-[var(--line)] p-3 sm:grid-cols-[1fr_auto_auto_auto_auto_auto]">
-                        <div class="grid grid-cols-[1fr_auto] gap-2">
-                            <input class="field min-h-10 py-2" inputmode="numeric" min="0" data-count-input="${product.id}" type="number" placeholder="Qty opname" />
-                            <button class="stock-action bg-[var(--brand)] text-white disabled:cursor-not-allowed disabled:opacity-50" data-action="count" data-id="${product.id}" data-pending-key="count:${product.id}" type="button">Input</button>
+                    <div class="stock-workflow">
+                        <div class="stock-workflow-block">
+                            <p class="stock-workflow-title">Input hasil hitung fisik</p>
+                            <div class="stock-count-row">
+                                <input class="field min-h-10 py-2" inputmode="numeric" min="0" data-count-input="${product.id}" type="number" placeholder="Masukkan qty fisik baru" aria-label="Qty fisik ${escapeHtml(product.name)}" />
+                                <button class="stock-action stock-action-primary disabled:cursor-not-allowed disabled:opacity-50" data-action="count" data-id="${product.id}" data-pending-key="count:${product.id}" type="button">Simpan fisik</button>
+                            </div>
                         </div>
-                        <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="quick-in" data-id="${product.id}" data-pending-key="quick-in:${product.id}" type="button">+1</button>
-                        <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="quick-out" data-id="${product.id}" data-pending-key="quick-out:${product.id}" type="button">-1</button>
-                        <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="sync" data-id="${product.id}" data-pending-key="sync:${product.id}" type="button">Samakan</button>
-                        <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="edit-system" data-id="${product.id}" data-system-stock="${product.systemStock}" data-pending-key="edit-system:${product.id}" type="button">Edit</button>
-                        <button class="stock-action text-[#a12020] disabled:cursor-not-allowed disabled:opacity-50" data-action="delete-item" data-id="${product.id}" data-pending-key="delete-item:${product.id}" type="button">Hapus</button>
+                        <div class="stock-workflow-block">
+                            <p class="stock-workflow-title">Koreksi stok fisik cepat</p>
+                            <div class="stock-button-grid">
+                                <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="quick-in" data-id="${product.id}" data-pending-key="quick-in:${product.id}" type="button">Tambah fisik +1</button>
+                                <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="quick-out" data-id="${product.id}" data-pending-key="quick-out:${product.id}" type="button">Kurangi fisik -1</button>
+                                <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="sync" data-id="${product.id}" data-pending-key="sync:${product.id}" type="button">Fisik = Sistem</button>
+                            </div>
+                        </div>
+                        <div class="stock-workflow-block">
+                            <p class="stock-workflow-title">Kelola master stok</p>
+                            <div class="stock-admin-actions">
+                                <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="edit-system" data-id="${product.id}" data-system-stock="${product.systemStock}" data-pending-key="edit-system:${product.id}" type="button">Edit stok sistem</button>
+                                <button class="stock-action stock-action-danger disabled:cursor-not-allowed disabled:opacity-50" data-action="delete-item" data-id="${product.id}" data-pending-key="delete-item:${product.id}" type="button">Hapus produk</button>
+                            </div>
+                        </div>
                     </div>
                 </article>
             `;
@@ -387,6 +408,70 @@ if (app) {
             '"': '&quot;',
             "'": '&#039;',
         }[char]));
+    }
+
+    function openDialog({
+        title,
+        message,
+        confirmText = 'Lanjutkan',
+        cancelText = 'Batal',
+        danger = false,
+        input = null,
+        fields = null,
+    }) {
+        return new Promise((resolve) => {
+            const backdrop = document.createElement('div');
+            backdrop.className = 'confirm-backdrop';
+            const fieldMarkup = fields?.length
+                ? `<div class="confirm-field-grid">
+                    ${fields.map((field) => `
+                        <label class="block">
+                            <span class="label">${escapeHtml(field.label)}</span>
+                            <input class="field mt-1" data-confirm-field="${escapeHtml(field.name)}" type="${field.type || 'text'}" inputmode="${field.inputmode || 'text'}" min="${field.min ?? ''}" value="${escapeHtml(field.value ?? '')}" />
+                        </label>
+                    `).join('')}
+                </div>`
+                : '';
+
+            backdrop.innerHTML = `
+                <div class="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+                    <div class="confirm-dialog-body">
+                        <h2 id="confirmTitle" class="confirm-dialog-title">${escapeHtml(title)}</h2>
+                        <p class="confirm-dialog-message">${escapeHtml(message)}</p>
+                        ${input ? `<input class="field" data-confirm-input type="${input.type || 'text'}" inputmode="${input.inputmode || 'text'}" min="${input.min ?? ''}" value="${escapeHtml(input.value ?? '')}" aria-label="${escapeHtml(input.label || title)}" />` : ''}
+                        ${fieldMarkup}
+                    </div>
+                    <div class="confirm-dialog-actions">
+                        <button class="confirm-button" data-confirm-cancel type="button">${escapeHtml(cancelText)}</button>
+                        <button class="confirm-button ${danger ? 'confirm-button-danger' : 'confirm-button-primary'}" data-confirm-ok type="button">${escapeHtml(confirmText)}</button>
+                    </div>
+                </div>
+            `;
+
+            const cleanup = (value) => {
+                document.removeEventListener('keydown', onKeydown);
+                backdrop.remove();
+                resolve(value);
+            };
+            const onKeydown = (event) => {
+                if (event.key === 'Escape') cleanup(null);
+            };
+
+            backdrop.addEventListener('click', (event) => {
+                if (event.target === backdrop || event.target.closest('[data-confirm-cancel]')) cleanup(null);
+                if (event.target.closest('[data-confirm-ok]')) {
+                    const field = backdrop.querySelector('[data-confirm-input]');
+                    if (fields?.length) {
+                        cleanup(Object.fromEntries([...backdrop.querySelectorAll('[data-confirm-field]')].map((input) => [input.dataset.confirmField, input.value])));
+                        return;
+                    }
+                    cleanup(field ? field.value : true);
+                }
+            });
+            document.addEventListener('keydown', onKeydown);
+            document.body.append(backdrop);
+            (backdrop.querySelector('[data-confirm-input]') || backdrop.querySelector('[data-confirm-field]') || backdrop.querySelector('[data-confirm-ok]'))?.focus();
+        });
     }
 
     elements.productForm?.addEventListener('submit', async (event) => {
@@ -494,7 +579,18 @@ if (app) {
 
         if (button.dataset.action === 'edit-system') {
             const productName = button.closest('.stock-card')?.querySelector('h3')?.textContent || 'stok ini';
-            const value = window.prompt(`Stok sistem baru untuk ${productName}:`, button.dataset.systemStock || '0');
+            const value = await openDialog({
+                title: 'Edit stok sistem',
+                message: `Ubah stok sistem untuk ${productName}. Ini memengaruhi angka Sistem dan Selisih.`,
+                confirmText: 'Simpan stok sistem',
+                input: {
+                    type: 'number',
+                    inputmode: 'numeric',
+                    min: 0,
+                    value: button.dataset.systemStock || '0',
+                    label: `Stok sistem baru untuk ${productName}`,
+                },
+            });
             if (value === null) return;
 
             const systemStock = Number(value);
@@ -522,9 +618,63 @@ if (app) {
             return;
         }
 
+        if (button.dataset.action === 'edit-info') {
+            const productName = button.closest('.stock-card')?.querySelector('h3')?.textContent || 'stok ini';
+            const value = await openDialog({
+                title: 'Edit info produk',
+                message: `Ubah tipe dan satuan untuk ${productName}. Ini tidak mengubah angka Sistem atau Fisik.`,
+                confirmText: 'Simpan info produk',
+                fields: [
+                    {
+                        name: 'type',
+                        label: 'Tipe produk',
+                        value: button.dataset.type || '',
+                    },
+                    {
+                        name: 'unit',
+                        label: 'Satuan',
+                        value: button.dataset.unit || '',
+                    },
+                ],
+            });
+            if (value === null) return;
+
+            const type = String(value.type || '').trim();
+            const unit = String(value.unit || '').trim();
+            if (!type || !unit) {
+                setError(new Error('Tipe dan satuan wajib diisi.'));
+                return;
+            }
+
+            guardedRequest(`edit-info:${button.dataset.id}`, async () => {
+                try {
+                    setBusy('Mengedit info produk...');
+                    state = await request(`/stock-opname/items/${button.dataset.id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            type,
+                            unit,
+                            ...sessionPayload(),
+                        }),
+                    });
+                    setSynced();
+                    render();
+                } catch (error) {
+                    setError(error);
+                }
+            });
+            return;
+        }
+
         if (button.dataset.action === 'delete-item') {
             const productName = button.closest('.stock-card')?.querySelector('h3')?.textContent || 'stok ini';
-            if (!window.confirm(`Hapus ${productName} dari stok aktif? Riwayatnya tetap tersimpan.`)) return;
+            const confirmed = await openDialog({
+                title: 'Hapus produk',
+                message: `Hapus ${productName} dari stok aktif? Riwayat mutasi tetap tersimpan.`,
+                confirmText: 'Hapus produk',
+                danger: true,
+            });
+            if (!confirmed) return;
 
             guardedRequest(`delete-item:${button.dataset.id}`, async () => {
                 try {
@@ -543,10 +693,19 @@ if (app) {
         }
 
         if (['quick-in', 'quick-out', 'sync'].includes(button.dataset.action)) {
-            const actionLabel = { 'quick-in': 'tambah +1', 'quick-out': 'kurangi -1', sync: 'samakan dengan stok sistem' }[button.dataset.action];
+            const actionLabel = {
+                'quick-in': 'tambah stok fisik +1',
+                'quick-out': 'kurangi stok fisik -1',
+                sync: 'samakan stok fisik dengan stok sistem',
+            }[button.dataset.action];
             const productName = button.closest('.stock-card')?.querySelector('h3')?.textContent || 'stok ini';
+            const confirmed = await openDialog({
+                title: 'Konfirmasi koreksi fisik',
+                message: `Aksi ini akan ${actionLabel} untuk ${productName}.`,
+                confirmText: 'Ya, lanjutkan',
+            });
 
-            if (!window.confirm(`Konfirmasi ${actionLabel} untuk ${productName}?`)) {
+            if (!confirmed) {
                 return;
             }
         }

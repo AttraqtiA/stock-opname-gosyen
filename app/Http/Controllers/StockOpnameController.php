@@ -107,9 +107,16 @@ class StockOpnameController extends Controller
 
     public function updateItem(Request $request, StockItem $stockItem): JsonResponse
     {
+        $request->merge([
+            'type' => $request->has('type') ? Str::of($request->input('type', ''))->squish()->toString() : null,
+            'unit' => $request->has('unit') ? Str::of($request->input('unit', ''))->squish()->toString() : null,
+        ]);
+
         $data = $request->validate([
             'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->where('status', 'approved')],
-            'system_stock' => ['required', 'integer', 'min:0'],
+            'system_stock' => ['sometimes', 'required', 'integer', 'min:0'],
+            'type' => ['sometimes', 'required', 'string', 'max:255'],
+            'unit' => ['sometimes', 'required', 'string', 'max:32'],
         ]);
 
         DB::transaction(function () use ($data, $request, $stockItem): void {
@@ -119,8 +126,27 @@ class StockOpnameController extends Controller
                 ->lockForUpdate()
                 ->findOrFail($stockItem->id);
 
-            $item->system_stock = (int) $data['system_stock'];
-            $this->recordMovement($item, 'update', 0, $this->movementMeta($request, $company), 'Edit stok sistem');
+            $changes = [];
+
+            if (array_key_exists('system_stock', $data)) {
+                $item->system_stock = (int) $data['system_stock'];
+                $changes[] = 'stok sistem';
+            }
+
+            if (array_key_exists('type', $data)) {
+                $item->type = $this->displayTypeForCompany($company, $data['type']);
+                $item->normalized_type = $this->normalizeType($data['type']);
+                $changes[] = 'tipe';
+            }
+
+            if (array_key_exists('unit', $data)) {
+                $item->unit = $data['unit'];
+                $changes[] = 'satuan';
+            }
+
+            abort_if($changes === [], 422, 'Tidak ada perubahan produk yang dikirim.');
+
+            $this->recordMovement($item, 'update', 0, $this->movementMeta($request, $company), 'Edit '.implode(' & ', $changes));
             $item->save();
         });
 

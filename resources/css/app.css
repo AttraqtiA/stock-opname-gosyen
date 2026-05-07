@@ -259,6 +259,165 @@
         background: var(--panel-soft);
     }
 
+    .product-title-row {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .product-info-button {
+        display: inline-grid;
+        min-width: 36px;
+        width: 36px;
+        height: 36px;
+        flex-shrink: 0;
+        place-items: center;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--panel-soft);
+        color: var(--muted);
+        transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
+    }
+
+    .product-info-button:hover {
+        border-color: var(--brand);
+        color: var(--brand);
+    }
+
+    .stock-workflow {
+        display: grid;
+        gap: 0.75rem;
+        border-top: 1px solid var(--line);
+        padding: 0.875rem;
+    }
+
+    .stock-workflow-block {
+        display: grid;
+        gap: 0.5rem;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: color-mix(in srgb, var(--panel) 72%, var(--panel-soft));
+        padding: 0.75rem;
+    }
+
+    .stock-workflow-title {
+        color: var(--muted);
+        font-size: 0.75rem;
+        font-weight: 800;
+        text-transform: uppercase;
+    }
+
+    .stock-count-row,
+    .stock-button-grid {
+        display: grid;
+        gap: 0.5rem;
+    }
+
+    .stock-count-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .stock-button-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .stock-admin-actions {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.5rem;
+    }
+
+    .stock-action-primary {
+        border-color: var(--brand);
+        background: var(--brand);
+        color: #ffffff;
+    }
+
+    .stock-action-primary:hover {
+        background: var(--brand-strong);
+        color: #ffffff;
+    }
+
+    .stock-action-danger {
+        border-color: color-mix(in srgb, var(--danger) 55%, var(--line));
+        color: #a12020;
+    }
+
+    .dark .stock-action-danger {
+        color: #ffb5b8;
+    }
+
+    .confirm-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        display: grid;
+        place-items: center;
+        background: rgba(8, 13, 29, 0.58);
+        padding: 1rem;
+    }
+
+    .confirm-dialog {
+        width: min(440px, 100%);
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--panel);
+        box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+        color: var(--text);
+    }
+
+    .confirm-dialog-body {
+        display: grid;
+        gap: 0.75rem;
+        padding: 1rem;
+    }
+
+    .confirm-field-grid {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .confirm-dialog-title {
+        font-size: 1.125rem;
+        font-weight: 800;
+    }
+
+    .confirm-dialog-message {
+        color: var(--muted);
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .confirm-dialog-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 0.5rem;
+        border-top: 1px solid var(--line);
+        padding: 0.875rem 1rem 1rem;
+    }
+
+    .confirm-button {
+        min-height: 44px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        padding: 0.625rem 0.875rem;
+        font-size: 0.875rem;
+        font-weight: 800;
+    }
+
+    .confirm-button-primary {
+        border-color: var(--brand);
+        background: var(--brand);
+        color: #ffffff;
+    }
+
+    .confirm-button-danger {
+        border-color: #a12020;
+        background: #a12020;
+        color: #ffffff;
+    }
+
     .empty-state {
         min-height: 140px;
         display: grid;
@@ -336,6 +495,13 @@
         .stock-action {
             min-height: 48px;
             padding-inline: 0.5rem;
+        }
+
+        .stock-count-row,
+        .stock-button-grid,
+        .stock-admin-actions,
+        .confirm-dialog-actions {
+            grid-template-columns: 1fr;
         }
 
         .empty-state {
