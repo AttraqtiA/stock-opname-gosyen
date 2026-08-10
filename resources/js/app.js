@@ -358,6 +358,7 @@ if (app) {
                                 <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="sync" data-id="${product.id}" data-pending-key="sync:${product.id}" type="button">Fisik = Sistem</button>
                             </div>
                         </div>
+                        ${window.isAdmin ? `
                         <div class="stock-workflow-block">
                             <p class="stock-workflow-title">Kelola master stok</p>
                             <div class="stock-admin-actions">
@@ -365,6 +366,7 @@ if (app) {
                                 <button class="stock-action stock-action-danger disabled:cursor-not-allowed disabled:opacity-50" data-action="delete-item" data-id="${product.id}" data-pending-key="delete-item:${product.id}" type="button">Hapus produk</button>
                             </div>
                         </div>
+                        ` : ''}
                     </div>
                 </article>
             `;

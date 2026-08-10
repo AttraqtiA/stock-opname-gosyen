@@ -16,7 +16,12 @@ class StockOpnameController extends Controller
 {
     public function index(): JsonResponse
     {
-        return response()->json($this->payload(request()->integer('company_id') ?: null));
+        $companyId = request()->integer('company_id') ?: Company::query()->where('status', 'approved')->orderBy('name')->value('id');
+        if ($companyId) {
+            Company::query()->where('status', 'approved')->findOrFail($companyId);
+        }
+
+        return response()->json($this->payload($companyId));
     }
 
     public function storeItem(Request $request): JsonResponse
@@ -33,7 +38,9 @@ class StockOpnameController extends Controller
                 'required',
                 'string',
                 'max:255',
-                Rule::unique('stock_items', 'name')->where('company_id', $request->integer('company_id')),
+                Rule::unique('stock_items', 'name')
+                    ->where('company_id', $request->integer('company_id'))
+                    ->whereNull('deleted_at'),
             ],
             'type' => ['required', 'string', 'max:255'],
             'unit' => ['required', 'string', 'max:32'],
@@ -90,7 +97,7 @@ class StockOpnameController extends Controller
             }
 
             if ($data['kind'] === 'count') {
-                $item->actual_stock += $quantity;
+                $item->actual_stock = $quantity;
             }
 
             if ($data['kind'] === 'sync') {
@@ -107,10 +114,16 @@ class StockOpnameController extends Controller
 
     public function updateItem(Request $request, StockItem $stockItem): JsonResponse
     {
-        $request->merge([
-            'type' => $request->has('type') ? Str::of($request->input('type', ''))->squish()->toString() : null,
-            'unit' => $request->has('unit') ? Str::of($request->input('unit', ''))->squish()->toString() : null,
-        ]);
+        $merge = [];
+        if ($request->has('type')) {
+            $merge['type'] = Str::of($request->input('type', ''))->squish()->toString();
+        }
+        if ($request->has('unit')) {
+            $merge['unit'] = Str::of($request->input('unit', ''))->squish()->toString();
+        }
+        if ($merge !== []) {
+            $request->merge($merge);
+        }
 
         $data = $request->validate([
             'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->where('status', 'approved')],
@@ -129,6 +142,7 @@ class StockOpnameController extends Controller
             $changes = [];
 
             if (array_key_exists('system_stock', $data)) {
+                abort_unless($request->user()->isAdmin(), 403, 'Hanya admin yang dapat mengedit stok sistem.');
                 $item->system_stock = (int) $data['system_stock'];
                 $changes[] = 'stok sistem';
             }
@@ -158,6 +172,8 @@ class StockOpnameController extends Controller
         $data = $request->validate([
             'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->where('status', 'approved')],
         ]);
+
+        abort_unless($request->user()->isAdmin(), 403, 'Hanya admin yang dapat menghapus produk.');
 
         DB::transaction(function () use ($data, $request, $stockItem): void {
             $company = Company::query()->findOrFail($data['company_id']);
@@ -264,13 +280,16 @@ class StockOpnameController extends Controller
     public function history(Request $request): View
     {
         $companyId = $request->integer('company_id') ?: Company::query()->where('status', 'approved')->orderBy('name')->value('id');
+        if ($companyId) {
+            Company::query()->where('status', 'approved')->findOrFail($companyId);
+        }
         $from = $request->query('from');
         $to = $request->query('to');
 
         $movements = StockMovement::query()
             ->select('stock_movements.*')
             ->join('stock_items', 'stock_items.id', '=', 'stock_movements.stock_item_id')
-            ->with(['stockItem:id,code,name,unit', 'user:id,name,email'])
+            ->with(['stockItem' => fn ($query) => $query->withTrashed(), 'user:id,name,email'])
             ->where('stock_items.company_id', $companyId)
             ->when($from, fn ($query) => $query->whereDate('stock_movements.created_at', '>=', $from))
             ->when($to, fn ($query) => $query->whereDate('stock_movements.created_at', '<=', $to))
@@ -313,7 +332,7 @@ class StockOpnameController extends Controller
         $movements = StockMovement::query()
             ->select('stock_movements.*')
             ->join('stock_items', 'stock_items.id', '=', 'stock_movements.stock_item_id')
-            ->with(['stockItem:id,name,unit', 'user:id,name,email'])
+            ->with(['stockItem' => fn ($query) => $query->withTrashed(), 'user:id,name,email'])
             ->where('stock_items.company_id', $companyId)
             ->latest('stock_movements.created_at')
             ->limit(10)
