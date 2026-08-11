@@ -28,9 +28,24 @@ class Company extends Model
         'approved_at' => 'datetime',
     ];
 
+    protected static function booted(): void
+    {
+        static::created(function (Company $company) {
+            $company->warehouses()->create([
+                'name' => 'Utama',
+                'location' => $company->location ?: 'Lokasi Utama',
+            ]);
+        });
+    }
+
     public function stockItems(): HasMany
     {
         return $this->hasMany(StockItem::class);
+    }
+
+    public function warehouses(): HasMany
+    {
+        return $this->hasMany(Warehouse::class);
     }
 
     public function pic(): BelongsTo

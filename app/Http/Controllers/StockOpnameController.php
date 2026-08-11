@@ -34,6 +34,11 @@ class StockOpnameController extends Controller
 
         $data = $request->validate([
             'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->where('status', 'approved')],
+            'warehouse_id' => [
+                'required',
+                'integer',
+                Rule::exists('warehouses', 'id')->where('company_id', $request->integer('company_id')),
+            ],
             'name' => [
                 'required',
                 'string',
@@ -56,6 +61,7 @@ class StockOpnameController extends Controller
             $item = StockItem::create([
                 'code' => $this->nextCode($company),
                 'company_id' => $company->id,
+                'warehouse_id' => $data['warehouse_id'],
                 'name' => $data['name'],
                 'type' => $type,
                 'normalized_type' => $this->normalizeType($data['type']),
@@ -209,12 +215,15 @@ class StockOpnameController extends Controller
             fputcsv($handle, ['Lokasi', $location]);
             fputcsv($handle, ['Petugas', $officer]);
             fputcsv($handle, []);
-            fputcsv($handle, ['No.', 'Kode Barang', 'Nama Barang', 'Stock Program', 'Opname', 'Selisih', 'Ket']);
+            fputcsv($handle, ['No.', 'Kode Barang', 'Nama Barang', 'Gudang', 'Stock Program', 'Opname', 'Selisih', 'Ket']);
 
             $rowNumber = 1;
 
             StockItem::query()
-                ->with(['movements' => fn ($query) => $query->with('user:id,name,email')->whereIn('kind', ['count', 'in', 'out'])->oldest()])
+                ->with([
+                    'warehouse',
+                    'movements' => fn ($query) => $query->with('user:id,name,email')->whereIn('kind', ['count', 'in', 'out'])->oldest()
+                ])
                 ->where('company_id', $company->id)
                 ->orderBy('code')
                 ->each(function (StockItem $item) use ($handle, &$rowNumber): void {
@@ -223,6 +232,7 @@ class StockOpnameController extends Controller
                         $rowNumber++,
                         $item->code,
                         $item->name,
+                        $item->warehouse?->name ?: '-',
                         $this->formatExportNumber($item->system_stock),
                         $this->formatExportNumber($item->actual_stock),
                         $this->formatExportNumber($diff),
@@ -311,7 +321,7 @@ class StockOpnameController extends Controller
         $companyId = $companyId ?: Company::query()->where('status', 'approved')->orderBy('name')->value('id');
 
         $items = StockItem::query()
-            ->select(['id', 'code', 'company_id', 'name', 'type', 'normalized_type', 'unit', 'system_stock', 'actual_stock', 'updated_at'])
+            ->select(['id', 'code', 'company_id', 'warehouse_id', 'name', 'type', 'normalized_type', 'unit', 'system_stock', 'actual_stock', 'updated_at'])
             ->where('company_id', $companyId)
             ->orderBy('code')
             ->orderBy('name')
@@ -320,6 +330,7 @@ class StockOpnameController extends Controller
                 'id' => $item->id,
                 'code' => $item->code,
                 'companyId' => $item->company_id,
+                'warehouseId' => $item->warehouse_id,
                 'name' => $item->name,
                 'type' => $item->type,
                 'normalizedType' => $item->normalized_type,
@@ -353,6 +364,17 @@ class StockOpnameController extends Controller
                 'at' => $movement->created_at?->toISOString(),
             ]);
 
+        $warehouses = \App\Models\Warehouse::query()
+            ->where('company_id', $companyId)
+            ->orderBy('name')
+            ->get(['id', 'company_id', 'name', 'location'])
+            ->map(fn (\App\Models\Warehouse $w): array => [
+                'id' => $w->id,
+                'companyId' => $w->company_id,
+                'name' => $w->name,
+                'location' => $w->location,
+            ]);
+
         return [
             'companies' => Company::query()
                 ->where('status', 'approved')
@@ -360,6 +382,7 @@ class StockOpnameController extends Controller
                 ->get(['id', 'name', 'location', 'pic_user_id', 'code_prefix']),
             'currentCompanyId' => $companyId,
             'products' => $items,
+            'warehouses' => $warehouses,
             'activities' => $movements,
         ];
     }
@@ -467,5 +490,86 @@ class StockOpnameController extends Controller
         $formatted = number_format(abs($value), 2, ',', '.');
 
         return $value < 0 ? "({$formatted})" : $formatted;
+    }
+
+    public function storeWarehouse(Request $request): JsonResponse
+    {
+        $request->merge([
+            'name' => Str::of($request->input('name', ''))->squish()->toString(),
+            'location' => Str::of($request->input('location', ''))->squish()->toString(),
+        ]);
+
+        $data = $request->validate([
+            'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->where('status', 'approved')],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('warehouses', 'name')
+                    ->where('company_id', $request->integer('company_id')),
+            ],
+            'location' => ['nullable', 'string', 'max:255'],
+        ], [
+            'name.unique' => 'Nama gudang ini sudah ada di company aktif.',
+        ]);
+
+        \App\Models\Warehouse::create([
+            'company_id' => $data['company_id'],
+            'name' => $data['name'],
+            'location' => $data['location'] ?: null,
+        ]);
+
+        return response()->json($this->payload((int) $data['company_id']), 201);
+    }
+
+    public function updateWarehouse(Request $request, \App\Models\Warehouse $warehouse): JsonResponse
+    {
+        $request->merge([
+            'name' => Str::of($request->input('name', ''))->squish()->toString(),
+            'location' => Str::of($request->input('location', ''))->squish()->toString(),
+        ]);
+
+        $data = $request->validate([
+            'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->where('status', 'approved')],
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                Rule::unique('warehouses', 'name')
+                    ->where('company_id', $request->integer('company_id'))
+                    ->ignore($warehouse->id),
+            ],
+            'location' => ['nullable', 'string', 'max:255'],
+        ], [
+            'name.unique' => 'Nama gudang ini sudah ada di company aktif.',
+        ]);
+
+        abort_unless($warehouse->company_id === (int) $data['company_id'], 403, 'Akses tidak sah.');
+
+        $warehouse->update([
+            'name' => $data['name'],
+            'location' => $data['location'] ?: null,
+        ]);
+
+        return response()->json($this->payload((int) $data['company_id']));
+    }
+
+    public function destroyWarehouse(Request $request, \App\Models\Warehouse $warehouse): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->where('status', 'approved')],
+        ]);
+
+        abort_unless($warehouse->company_id === (int) $data['company_id'], 403, 'Akses tidak sah.');
+
+        $count = \App\Models\Warehouse::query()->where('company_id', $data['company_id'])->count();
+        abort_if($count <= 1, 422, 'Gudang tidak dapat dihapus. Client minimal harus memiliki 1 gudang.');
+
+        $hasItems = StockItem::query()->where('warehouse_id', $warehouse->id)->exists();
+        abort_if($hasItems, 422, 'Gudang tidak dapat dihapus karena masih berisi barang. Pindahkan barang terlebih dahulu.');
+
+        $warehouse->delete();
+
+        return response()->json($this->payload((int) $data['company_id']));
     }
 }

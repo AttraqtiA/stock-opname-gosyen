@@ -43,4 +43,8 @@ Route::middleware('auth')->prefix('stock-opname')->group(function (): void {
     Route::post('/movements', [StockOpnameController::class, 'storeMovement'])->name('stock-opname.movements.store');
     Route::get('/history', [StockOpnameController::class, 'history'])->name('stock-opname.history');
     Route::get('/export', [StockOpnameController::class, 'export'])->name('stock-opname.export');
+
+    Route::post('/warehouses', [StockOpnameController::class, 'storeWarehouse'])->name('stock-opname.warehouses.store');
+    Route::patch('/warehouses/{warehouse}', [StockOpnameController::class, 'updateWarehouse'])->name('stock-opname.warehouses.update');
+    Route::delete('/warehouses/{warehouse}', [StockOpnameController::class, 'destroyWarehouse'])->name('stock-opname.warehouses.destroy');
 });

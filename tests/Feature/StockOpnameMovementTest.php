@@ -162,10 +162,12 @@ class StockOpnameMovementTest extends TestCase
     {
         $user = User::factory()->create(['role' => 'admin', 'is_approved' => true]);
         $company = Company::create(['name' => 'PT Warehouse Client', 'code_prefix' => 'PWC', 'next_stock_number' => 1, 'status' => 'approved']);
+        $warehouse = $company->warehouses()->firstOrFail();
 
         // Create first product
         $this->actingAs($user)->postJson('/stock-opname/items', [
             'company_id' => $company->id,
+            'warehouse_id' => $warehouse->id,
             'name' => '02HA Precision Regulator',
             'type' => 'Sparepart',
             'unit' => 'pcs',
@@ -185,6 +187,7 @@ class StockOpnameMovementTest extends TestCase
         // Try creating with same name again - should succeed now!
         $this->actingAs($user)->postJson('/stock-opname/items', [
             'company_id' => $company->id,
+            'warehouse_id' => $warehouse->id,
             'name' => '02HA Precision Regulator',
             'type' => 'Sparepart',
             'unit' => 'pcs',

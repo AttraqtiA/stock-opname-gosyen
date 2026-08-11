@@ -113,6 +113,16 @@
                     </div>
                 </div>
 
+                <div class="panel form-panel p-4">
+                    <p class="text-sm font-semibold text-[var(--muted)]">Kelola Gudang</p>
+                    <div id="warehouseList" class="mt-3 divide-y divide-[var(--line)] max-h-48 overflow-y-auto"></div>
+                    <form id="warehouseForm" class="mt-3 grid gap-2">
+                        <input name="name" required class="field text-sm" placeholder="Nama Gudang Baru" />
+                        <input name="location" class="field text-sm" placeholder="Lokasi Gudang (Opsional)" />
+                        <button class="rounded-md bg-[var(--brand)] px-3 py-2 text-xs font-bold text-white transition hover:bg-[var(--brand-strong)]">Tambah Gudang</button>
+                    </form>
+                </div>
+
                 <form id="productForm" class="panel form-panel form-panel-product p-4">
                     <div class="flex items-center justify-between gap-3">
                         <div>
@@ -125,6 +135,10 @@
                         <label class="block">
                             <span class="label">Nama stok</span>
                             <input name="name" required class="field mt-1" placeholder="Contoh: Plastik vacuum 1 kg" />
+                        </label>
+                        <label class="block">
+                            <span class="label">Gudang / Posisi</span>
+                            <select name="warehouse_id" id="productWarehouseSelect" required class="field mt-1"></select>
                         </label>
                         <div class="grid grid-cols-2 gap-3">
                             <label class="block">

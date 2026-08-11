@@ -55,8 +55,11 @@ if (app) {
         navMenuToggle: document.querySelector('#navMenuToggle'),
         navActions: document.querySelector('#navActions'),
         alertRegion: document.querySelector('#alertRegion'),
+        warehouseForm: document.querySelector('#warehouseForm'),
+        warehouseList: document.querySelector('#warehouseList'),
+        productWarehouseSelect: document.querySelector('#productWarehouseSelect'),
     };
-    let state = { companies: [], currentCompanyId: null, products: [], activities: [] };
+    let state = { companies: [], currentCompanyId: null, products: [], warehouses: [], activities: [] };
     const pendingActions = new Set();
     let alertTimeout;
 
@@ -242,8 +245,43 @@ if (app) {
         renderFilters();
         renderSummary();
         renderMovementOptions();
+        renderWarehouses();
         renderProducts();
         renderActivities();
+    }
+
+    function renderWarehouses() {
+        if (!elements.warehouseList || !elements.productWarehouseSelect) return;
+
+        elements.productWarehouseSelect.innerHTML = state.warehouses
+            .map((w) => `<option value="${w.id}">${escapeHtml(w.name)} ${w.location ? `(${escapeHtml(w.location)})` : ''}</option>`)
+            .join('');
+
+        elements.warehouseList.innerHTML = state.warehouses.length
+            ? state.warehouses.map((w) => `
+                <div class="flex items-center justify-between gap-2 py-2 text-sm text-[var(--text)]">
+                    <div class="min-w-0">
+                        <strong class="block truncate">${escapeHtml(w.name)}</strong>
+                        ${w.location ? `<span class="text-xs text-[var(--muted)] block truncate">${escapeHtml(w.location)}</span>` : ''}
+                    </div>
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button type="button" class="p-1 text-[var(--brand)] hover:text-[var(--brand-strong)] transition" data-action="edit-warehouse" data-id="${w.id}" data-name="${escapeHtml(w.name)}" data-location="${escapeHtml(w.location)}" aria-label="Edit ${escapeHtml(w.name)}">
+                            <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                <path d="M12 20h9" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                <path d="m16.5 3.5 4 4L8 20H4v-4L16.5 3.5Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
+                        ${state.warehouses.length > 1 ? `
+                            <button type="button" class="p-1 text-[#a12020] hover:text-red-700 transition" data-action="delete-warehouse" data-id="${w.id}" aria-label="Hapus ${escapeHtml(w.name)}">
+                                <svg class="h-4 w-4" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                                    <path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+            `).join('')
+            : '<div class="py-2 text-xs text-[var(--muted)]">Belum ada gudang.</div>';
     }
 
     function renderFilters() {
@@ -323,6 +361,7 @@ if (app) {
                         <div class="min-w-0">
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="rounded-md bg-[var(--panel-soft)] px-2 py-1 text-xs font-bold text-[var(--muted)]">${escapeHtml(product.code)}</span>
+                                <span class="rounded-md bg-[var(--panel-soft)] px-2 py-1 text-xs font-semibold text-[var(--brand)]">📍 ${escapeHtml(state.warehouses.find(w => w.id === product.warehouseId)?.name || 'Utama')}</span>
                                 <span class="rounded-md px-2 py-1 text-xs font-bold ${statusClass(status)}">${statusLabel(status)}</span>
                             </div>
                             <div class="product-title-row mt-2">
@@ -488,6 +527,7 @@ if (app) {
                     method: 'POST',
                     body: JSON.stringify({
                         name: data.get('name'),
+                        warehouse_id: Number(data.get('warehouse_id')),
                         type: data.get('type'),
                         unit: data.get('unit'),
                         system_stock: Number(data.get('systemStock') || 0),
@@ -740,6 +780,111 @@ if (app) {
                 setError(error);
             }
         });
+    });
+
+    elements.warehouseForm?.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const data = new FormData(form);
+
+        guardedRequest('warehouse-form', async () => {
+            try {
+                setBusy('Menyimpan gudang...');
+                state = await request('/stock-opname/warehouses', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        name: data.get('name'),
+                        location: data.get('location'),
+                        ...sessionPayload(),
+                    }),
+                });
+                form.reset();
+                setSynced();
+                render();
+            } catch (error) {
+                setError(error);
+            }
+        });
+    });
+
+    elements.warehouseList?.addEventListener('click', async (event) => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+
+        if (button.dataset.action === 'edit-warehouse') {
+            const currentName = button.dataset.name;
+            const currentLocation = button.dataset.location;
+
+            const value = await openDialog({
+                title: 'Edit gudang',
+                message: `Ubah informasi untuk gudang ${currentName}.`,
+                confirmText: 'Simpan',
+                fields: [
+                    {
+                        name: 'name',
+                        label: 'Nama Gudang',
+                        value: currentName,
+                    },
+                    {
+                        name: 'location',
+                        label: 'Lokasi Gudang (Opsional)',
+                        value: currentLocation,
+                    },
+                ],
+            });
+            if (value === null) return;
+
+            const name = String(value.name || '').trim();
+            const location = String(value.location || '').trim();
+            if (!name) {
+                setError(new Error('Nama gudang wajib diisi.'));
+                return;
+            }
+
+            guardedRequest(`edit-warehouse:${button.dataset.id}`, async () => {
+                try {
+                    setBusy('Mengedit gudang...');
+                    state = await request(`/stock-opname/warehouses/${button.dataset.id}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                            name,
+                            location,
+                            ...sessionPayload(),
+                        }),
+                    });
+                    setSynced();
+                    render();
+                } catch (error) {
+                    setError(error);
+                }
+            });
+            return;
+        }
+
+        if (button.dataset.action === 'delete-warehouse') {
+            const confirmed = await openDialog({
+                title: 'Hapus gudang',
+                message: 'Hapus gudang ini? Gudang hanya bisa dihapus jika tidak berisi barang dan bukan satu-satunya gudang.',
+                confirmText: 'Hapus',
+                danger: true,
+            });
+            if (!confirmed) return;
+
+            guardedRequest(`delete-warehouse:${button.dataset.id}`, async () => {
+                try {
+                    setBusy('Menghapus gudang...');
+                    state = await request(`/stock-opname/warehouses/${button.dataset.id}`, {
+                        method: 'DELETE',
+                        body: JSON.stringify(sessionPayload()),
+                    });
+                    setSynced();
+                    render();
+                } catch (error) {
+                    setError(error);
+                }
+            });
+            return;
+        }
     });
 
     elements.searchInput.addEventListener('input', renderProducts);

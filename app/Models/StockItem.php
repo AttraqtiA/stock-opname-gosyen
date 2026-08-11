@@ -12,9 +12,22 @@ class StockItem extends Model
 {
     use HasFactory, SoftDeletes;
 
+    protected static function booted(): void
+    {
+        static::creating(function (StockItem $item) {
+            if (!$item->warehouse_id && $item->company_id) {
+                $item->warehouse_id = Warehouse::query()
+                    ->where('company_id', $item->company_id)
+                    ->orderBy('id')
+                    ->value('id');
+            }
+        });
+    }
+
     protected $fillable = [
         'code',
         'company_id',
+        'warehouse_id',
         'name',
         'type',
         'normalized_type',
@@ -36,5 +49,10 @@ class StockItem extends Model
     public function company(): BelongsTo
     {
         return $this->belongsTo(Company::class);
+    }
+
+    public function warehouse(): BelongsTo
+    {
+        return $this->belongsTo(Warehouse::class);
     }
 }
