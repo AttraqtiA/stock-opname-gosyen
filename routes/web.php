@@ -47,4 +47,9 @@ Route::middleware('auth')->prefix('stock-opname')->group(function (): void {
     Route::post('/warehouses', [StockOpnameController::class, 'storeWarehouse'])->name('stock-opname.warehouses.store');
     Route::patch('/warehouses/{warehouse}', [StockOpnameController::class, 'updateWarehouse'])->name('stock-opname.warehouses.update');
     Route::delete('/warehouses/{warehouse}', [StockOpnameController::class, 'destroyWarehouse'])->name('stock-opname.warehouses.destroy');
+
+    Route::post('/sessions', [StockOpnameController::class, 'storeSession'])->name('stock-opname.sessions.store');
+    Route::post('/sessions/{session}/finalize', [StockOpnameController::class, 'finalizeSession'])->name('stock-opname.sessions.finalize');
+    Route::post('/sessions/{session}/approve', [StockOpnameController::class, 'approveSession'])->name('stock-opname.sessions.approve');
+    Route::post('/sessions/{session}/reject', [StockOpnameController::class, 'rejectSession'])->name('stock-opname.sessions.reject');
 });

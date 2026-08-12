@@ -35,6 +35,13 @@ class StockOpnameMovementTest extends TestCase
             'actual_stock' => 0,
         ]);
 
+        \App\Models\OpnameSession::create([
+            'company_id' => $company->id,
+            'name' => 'Test Sesi',
+            'status' => 'active',
+            'created_by_user_id' => $user->id,
+        ]);
+
         $this->actingAs($user)->postJson('/stock-opname/movements', [
             'company_id' => $company->id,
             'stock_item_id' => $item->id,
@@ -212,6 +219,13 @@ class StockOpnameMovementTest extends TestCase
             'unit' => 'pcs',
             'system_stock' => 10,
             'actual_stock' => 0,
+        ]);
+
+        \App\Models\OpnameSession::create([
+            'company_id' => $company->id,
+            'name' => 'Test Sesi',
+            'status' => 'active',
+            'created_by_user_id' => $user->id,
         ]);
 
         // Record a movement

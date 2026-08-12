@@ -510,3 +510,36 @@
         }
     }
 }
+
+/* Custom premium styling for opname sessions and offline support */
+#offlineBanner {
+    animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+    from { transform: translateY(-100%); }
+    to { transform: translateY(0); }
+}
+
+#scannerModal .confirm-dialog {
+    max-width: 480px;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+}
+
+#scannerReader {
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* BarcodeInput gentle pulsing effect to guide warehouse staff */
+#barcodeInput:placeholder-shown {
+    animation: gentlePulse 2s infinite ease-in-out;
+}
+
+@keyframes gentlePulse {
+    0%, 100% { border-color: var(--line); box-shadow: none; }
+    50% { border-color: var(--brand); box-shadow: 0 0 8px rgba(47, 128, 194, 0.2); }
+}

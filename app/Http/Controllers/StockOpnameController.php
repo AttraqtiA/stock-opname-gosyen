@@ -5,6 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Company;
 use App\Models\StockItem;
 use App\Models\StockMovement;
+use App\Models\OpnameSession;
+use App\Models\OpnameSessionItem;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -70,7 +72,21 @@ class StockOpnameController extends Controller
                 'actual_stock' => $data['actual_stock'],
             ]);
 
-            $this->recordMovement($item, 'create', $data['actual_stock'], $this->movementMeta($request, $company), 'Barang baru');
+            // Add item to active session if exists
+            $activeSession = OpnameSession::where('company_id', $company->id)
+                ->where('status', 'active')
+                ->first();
+
+            if ($activeSession) {
+                OpnameSessionItem::create([
+                    'opname_session_id' => $activeSession->id,
+                    'stock_item_id' => $item->id,
+                    'system_stock' => $data['system_stock'],
+                    'actual_stock' => $data['actual_stock'],
+                ]);
+            }
+
+            $this->recordMovement($item, 'create', $data['actual_stock'], $this->movementMeta($request, $company), 'Barang baru', $activeSession?->id);
         });
 
         return response()->json($this->payload((int) $data['company_id']), 201);
@@ -86,7 +102,23 @@ class StockOpnameController extends Controller
             'note' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        DB::transaction(function () use ($data, $request): void {
+        $activeSession = OpnameSession::where('company_id', $data['company_id'])
+            ->where('status', 'active')
+            ->first();
+
+        $pendingSession = OpnameSession::where('company_id', $data['company_id'])
+            ->where('status', 'pending_approval')
+            ->first();
+
+        if ($pendingSession) {
+            abort(422, 'Sesi opname sedang menunggu persetujuan. Tidak dapat melakukan pencatatan.');
+        }
+
+        if (in_array($data['kind'], ['count', 'sync']) && !$activeSession) {
+            abort(422, 'Tidak ada sesi opname aktif. Silakan buka sesi baru.');
+        }
+
+        DB::transaction(function () use ($data, $request, $activeSession): void {
             $company = Company::query()->findOrFail($data['company_id']);
             $item = StockItem::query()
                 ->where('company_id', $data['company_id'])
@@ -94,24 +126,45 @@ class StockOpnameController extends Controller
                 ->findOrFail($data['stock_item_id']);
             $quantity = (int) $data['quantity'];
 
-            if ($data['kind'] === 'in') {
-                $item->actual_stock += $quantity;
+            if ($activeSession) {
+                $sessionItem = OpnameSessionItem::firstOrCreate([
+                    'opname_session_id' => $activeSession->id,
+                    'stock_item_id' => $item->id,
+                ], [
+                    'system_stock' => $item->system_stock,
+                    'actual_stock' => 0,
+                ]);
+
+                if ($data['kind'] === 'in') {
+                    $sessionItem->actual_stock += $quantity;
+                }
+                if ($data['kind'] === 'out') {
+                    $sessionItem->actual_stock = max(0, $sessionItem->actual_stock - $quantity);
+                }
+                if ($data['kind'] === 'count') {
+                    $sessionItem->actual_stock = $quantity;
+                }
+                if ($data['kind'] === 'sync') {
+                    $diff = abs($sessionItem->actual_stock - $sessionItem->system_stock);
+                    if ($diff >= 10 && !$request->user()->isAdmin()) {
+                        abort(403, 'Persetujuan supervisor diperlukan untuk sinkronisasi selisih besar (>= 10 unit).');
+                    }
+                    $quantity = $diff;
+                    $sessionItem->actual_stock = $sessionItem->system_stock;
+                }
+                $sessionItem->save();
+
+                $item->actual_stock = $sessionItem->actual_stock;
+            } else {
+                if ($data['kind'] === 'in') {
+                    $item->actual_stock += $quantity;
+                }
+                if ($data['kind'] === 'out') {
+                    $item->actual_stock = max(0, $item->actual_stock - $quantity);
+                }
             }
 
-            if ($data['kind'] === 'out') {
-                $item->actual_stock = max(0, $item->actual_stock - $quantity);
-            }
-
-            if ($data['kind'] === 'count') {
-                $item->actual_stock = $quantity;
-            }
-
-            if ($data['kind'] === 'sync') {
-                $quantity = abs($item->actual_stock - $item->system_stock);
-                $item->actual_stock = $item->system_stock;
-            }
-
-            $this->recordMovement($item, $data['kind'], $quantity, $this->movementMeta($request, $company), $data['note'] ?? null);
+            $this->recordMovement($item, $data['kind'], $quantity, $this->movementMeta($request, $company), $data['note'] ?? null, $activeSession?->id);
             $item->save();
         });
 
@@ -320,6 +373,31 @@ class StockOpnameController extends Controller
     {
         $companyId = $companyId ?: Company::query()->where('status', 'approved')->orderBy('name')->value('id');
 
+        $activeSession = OpnameSession::where('company_id', $companyId)
+            ->where('status', 'active')
+            ->with('creator:id,name')
+            ->first();
+
+        $pendingSession = OpnameSession::where('company_id', $companyId)
+            ->where('status', 'pending_approval')
+            ->with('creator:id,name')
+            ->first();
+
+        $displaySession = $activeSession ?: $pendingSession;
+        $sessionItems = [];
+        $sessionSystemStocks = [];
+
+        if ($displaySession) {
+            $sessionItems = DB::table('opname_session_items')
+                ->where('opname_session_id', $displaySession->id)
+                ->pluck('actual_stock', 'stock_item_id')
+                ->all();
+            $sessionSystemStocks = DB::table('opname_session_items')
+                ->where('opname_session_id', $displaySession->id)
+                ->pluck('system_stock', 'stock_item_id')
+                ->all();
+        }
+
         $items = StockItem::query()
             ->select(['id', 'code', 'company_id', 'warehouse_id', 'name', 'type', 'normalized_type', 'unit', 'system_stock', 'actual_stock', 'updated_at'])
             ->where('company_id', $companyId)
@@ -335,8 +413,8 @@ class StockOpnameController extends Controller
                 'type' => $item->type,
                 'normalizedType' => $item->normalized_type,
                 'unit' => $item->unit,
-                'systemStock' => $item->system_stock,
-                'actualStock' => $item->actual_stock,
+                'systemStock' => $displaySession ? ($sessionSystemStocks[$item->id] ?? 0) : $item->system_stock,
+                'actualStock' => $displaySession ? ($sessionItems[$item->id] ?? 0) : $item->actual_stock,
                 'updatedAt' => $item->updated_at?->toISOString(),
             ]);
 
@@ -384,14 +462,41 @@ class StockOpnameController extends Controller
             'products' => $items,
             'warehouses' => $warehouses,
             'activities' => $movements,
+            'activeSession' => $activeSession ? [
+                'id' => $activeSession->id,
+                'name' => $activeSession->name,
+                'status' => $activeSession->status,
+                'creatorName' => $activeSession->creator?->name ?: 'System',
+                'createdAt' => $activeSession->created_at?->toISOString(),
+            ] : null,
+            'pendingSession' => $pendingSession ? [
+                'id' => $pendingSession->id,
+                'name' => $pendingSession->name,
+                'status' => $pendingSession->status,
+                'creatorName' => $pendingSession->creator?->name ?: 'System',
+                'createdAt' => $pendingSession->created_at?->toISOString(),
+            ] : null,
+            'pastSessions' => OpnameSession::where('company_id', $companyId)
+                ->where('status', 'completed')
+                ->with('completer:id,name')
+                ->latest('completed_at')
+                ->limit(5)
+                ->get()
+                ->map(fn ($s): array => [
+                    'id' => $s->id,
+                    'name' => $s->name,
+                    'completedAt' => $s->completed_at?->toISOString(),
+                    'completerName' => $s->completer?->name ?: 'System',
+                ]),
         ];
     }
 
-    private function recordMovement(StockItem $item, string $kind, int $quantity, array $data, ?string $note): void
+    private function recordMovement(StockItem $item, string $kind, int $quantity, array $data, ?string $note, ?int $sessionId = null): void
     {
         StockMovement::create([
             'stock_item_id' => $item->id,
             'user_id' => $data['user_id'] ?? null,
+            'opname_session_id' => $sessionId,
             'kind' => $kind,
             'quantity' => $quantity,
             'system_stock_before' => $item->getOriginal('system_stock') ?? $item->system_stock,
@@ -571,5 +676,152 @@ class StockOpnameController extends Controller
         $warehouse->delete();
 
         return response()->json($this->payload((int) $data['company_id']));
+    }
+
+    public function storeSession(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'company_id' => ['required', 'integer', Rule::exists('companies', 'id')->where('status', 'approved')],
+            'name' => ['required', 'string', 'max:255'],
+        ]);
+
+        $active = OpnameSession::where('company_id', $data['company_id'])
+            ->where('status', 'active')
+            ->first();
+
+        if ($active) {
+            abort(422, 'Sudah ada sesi opname aktif untuk company ini.');
+        }
+
+        $pending = OpnameSession::where('company_id', $data['company_id'])
+            ->where('status', 'pending_approval')
+            ->first();
+
+        if ($pending) {
+            abort(422, 'Terdapat sesi opname yang sedang menunggu persetujuan.');
+        }
+
+        DB::transaction(function () use ($data, $request): void {
+            $session = OpnameSession::create([
+                'company_id' => $data['company_id'],
+                'name' => $data['name'],
+                'status' => 'active',
+                'created_by_user_id' => $request->user()->id,
+            ]);
+
+            $items = StockItem::where('company_id', $data['company_id'])->get();
+            foreach ($items as $item) {
+                OpnameSessionItem::create([
+                    'opname_session_id' => $session->id,
+                    'stock_item_id' => $item->id,
+                    'system_stock' => $item->system_stock,
+                    'actual_stock' => 0, // Reset actual stock to 0 for a new count session
+                ]);
+
+                // Reset global actual stock to 0 during active opname
+                $item->actual_stock = 0;
+                $item->save();
+            }
+        });
+
+        return response()->json($this->payload((int) $data['company_id']), 201);
+    }
+
+    public function finalizeSession(Request $request, OpnameSession $session): JsonResponse
+    {
+        abort_unless($session->status === 'active', 422, 'Sesi tidak aktif.');
+
+        $items = OpnameSessionItem::where('opname_session_id', $session->id)->get();
+        $hasLargeDiscrepancy = false;
+
+        foreach ($items as $item) {
+            if (abs($item->actual_stock - $item->system_stock) >= 10) {
+                $hasLargeDiscrepancy = true;
+                break;
+            }
+        }
+
+        if ($hasLargeDiscrepancy && !$request->user()->isAdmin()) {
+            $session->update([
+                'status' => 'pending_approval',
+            ]);
+            return response()->json([
+                'pending' => true,
+                'message' => 'Sesi opname menunggu persetujuan admin karena terdapat selisih >= 10 unit.',
+                'payload' => $this->payload((int) $session->company_id),
+            ]);
+        }
+
+        DB::transaction(function () use ($session, $items, $request): void {
+            foreach ($items as $sessionItem) {
+                $stockItem = StockItem::find($sessionItem->stock_item_id);
+                if ($stockItem) {
+                    $diff = abs($sessionItem->actual_stock - $sessionItem->system_stock);
+                    $stockItem->system_stock = $sessionItem->actual_stock;
+                    $stockItem->actual_stock = $sessionItem->actual_stock;
+                    $stockItem->save();
+
+                    $this->recordMovement($stockItem, 'sync', $diff, [
+                        'user_id' => $request->user()->id,
+                        'location' => $session->company?->location,
+                        'officer' => $request->user()->name,
+                    ], 'Finalisasi sesi opname: ' . $session->name, $session->id);
+                }
+            }
+
+            $session->update([
+                'status' => 'completed',
+                'completed_by_user_id' => $request->user()->id,
+                'completed_at' => now(),
+            ]);
+        });
+
+        return response()->json($this->payload((int) $session->company_id));
+    }
+
+    public function approveSession(Request $request, OpnameSession $session): JsonResponse
+    {
+        abort_unless($request->user()->isAdmin(), 403, 'Hanya admin yang dapat menyetujui sesi opname.');
+        abort_unless($session->status === 'pending_approval', 422, 'Sesi tidak sedang menunggu persetujuan.');
+
+        $items = OpnameSessionItem::where('opname_session_id', $session->id)->get();
+
+        DB::transaction(function () use ($session, $items, $request): void {
+            foreach ($items as $sessionItem) {
+                $stockItem = StockItem::find($sessionItem->stock_item_id);
+                if ($stockItem) {
+                    $diff = abs($sessionItem->actual_stock - $sessionItem->system_stock);
+                    $stockItem->system_stock = $sessionItem->actual_stock;
+                    $stockItem->actual_stock = $sessionItem->actual_stock;
+                    $stockItem->save();
+
+                    $this->recordMovement($stockItem, 'sync', $diff, [
+                        'user_id' => $request->user()->id,
+                        'location' => $session->company?->location,
+                        'officer' => $request->user()->name,
+                    ], 'Disetujui Admin: finalisasi sesi opname: ' . $session->name, $session->id);
+                }
+            }
+
+            $session->update([
+                'status' => 'completed',
+                'completed_by_user_id' => $request->user()->id,
+                'completed_at' => now(),
+            ]);
+        });
+
+        return response()->json($this->payload((int) $session->company_id));
+    }
+
+    public function rejectSession(Request $request, OpnameSession $session): JsonResponse
+    {
+        abort_unless($request->user()->isAdmin(), 403, 'Hanya admin yang dapat menolak sesi opname.');
+        abort_unless($session->status === 'pending_approval', 422, 'Sesi tidak sedang menunggu persetujuan.');
+
+        $session->update([
+            'status' => 'active',
+        ]);
+
+        return response()->json($this->payload((int) $session->company_id));
     }
 }

@@ -58,8 +58,28 @@ if (app) {
         warehouseForm: document.querySelector('#warehouseForm'),
         warehouseList: document.querySelector('#warehouseList'),
         productWarehouseSelect: document.querySelector('#productWarehouseSelect'),
+        
+        barcodeInput: document.querySelector('#barcodeInput'),
+        scanCameraBtn: document.querySelector('#scanCameraBtn'),
+        scannerModal: document.querySelector('#scannerModal'),
+        closeScannerBtn: document.querySelector('#closeScannerBtn'),
+        stopScannerBtn: document.querySelector('#stopScannerBtn'),
+        sessionStatusArea: document.querySelector('#sessionStatusArea'),
+        sessionApprovalPanel: document.querySelector('#sessionApprovalPanel'),
+        pendingSessionsList: document.querySelector('#pendingSessionsList'),
+        offlineBanner: document.querySelector('#offlineBanner'),
+        offlinePendingCount: document.querySelector('#offlinePendingCount'),
     };
-    let state = { companies: [], currentCompanyId: null, products: [], warehouses: [], activities: [] };
+    let state = { 
+        companies: [], 
+        currentCompanyId: null, 
+        products: [], 
+        warehouses: [], 
+        activities: [],
+        activeSession: null,
+        pendingSession: null,
+        pastSessions: []
+    };
     const pendingActions = new Set();
     let alertTimeout;
 
@@ -87,30 +107,202 @@ if (app) {
         elements.themeToggle.querySelector('.theme-icon-sun')?.classList.toggle('hidden', theme !== 'dark');
     }
 
+    let isOffline = !navigator.onLine;
+
     async function request(url, options = {}) {
-        const response = await fetch(url, {
-            headers: {
-                Accept: 'application/json',
-                'Content-Type': 'application/json',
-                'X-CSRF-TOKEN': csrf,
-                ...(options.headers || {}),
-            },
-            ...options,
-        });
-
-        const contentType = response.headers.get('content-type') || '';
-        const payload = contentType.includes('application/json')
-            ? await response.json()
-            : await response.text();
-
-        if (!response.ok) {
-            const message = typeof payload === 'string'
-                ? payload
-                : payload.message || Object.values(payload.errors || {})?.flat()?.[0];
-            throw new Error(message || 'Request gagal.');
+        const isWrite = ['POST', 'PATCH', 'PUT', 'DELETE'].includes(options.method || 'GET');
+        
+        if (isOffline) {
+            if (isWrite) {
+                queueOfflineAction(url, options);
+                return state;
+            }
+            const cached = localStorage.getItem('gosyen_opname_state');
+            if (cached) {
+                const parsed = JSON.parse(cached);
+                applyPendingQueueToState(parsed);
+                return parsed;
+            }
+            throw new Error('Koneksi terputus dan tidak ada cache lokal.');
         }
 
-        return payload;
+        try {
+            const response = await fetch(url, {
+                headers: {
+                    Accept: 'application/json',
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': csrf,
+                    ...(options.headers || {}),
+                },
+                ...options,
+            });
+
+            const contentType = response.headers.get('content-type') || '';
+            const payload = contentType.includes('application/json')
+                ? await response.json()
+                : await response.text();
+
+            if (!response.ok) {
+                const message = typeof payload === 'string'
+                    ? payload
+                    : payload.message || Object.values(payload.errors || {})?.flat()?.[0];
+                throw new Error(message || 'Request gagal.');
+            }
+
+            if (!isWrite && url.startsWith('/stock-opname')) {
+                localStorage.setItem('gosyen_opname_state', JSON.stringify(payload));
+            }
+
+            return payload;
+        } catch (error) {
+            if (error instanceof TypeError) {
+                isOffline = true;
+                updateOfflineBanner();
+                if (isWrite) {
+                    queueOfflineAction(url, options);
+                    return state;
+                }
+                const cached = localStorage.getItem('gosyen_opname_state');
+                if (cached) {
+                    const parsed = JSON.parse(cached);
+                    applyPendingQueueToState(parsed);
+                    return parsed;
+                }
+            }
+            throw error;
+        }
+    }
+
+    function queueOfflineAction(url, options) {
+        const queue = JSON.parse(localStorage.getItem('gosyen_pending_actions') || '[]');
+        queue.push({
+            id: Date.now() + Math.random().toString(36).substr(2, 5),
+            url,
+            method: options.method || 'POST',
+            body: options.body,
+        });
+        localStorage.setItem('gosyen_pending_actions', JSON.stringify(queue));
+        
+        const body = JSON.parse(options.body || '{}');
+        applySingleActionToState(state, url, options.method, body);
+        
+        updateOfflineBanner();
+        showAlert('Data disimpan secara lokal (Offline)', 'success');
+    }
+
+    function updateOfflineBanner() {
+        const queue = JSON.parse(localStorage.getItem('gosyen_pending_actions') || '[]');
+        const count = queue.length;
+        if (isOffline || count > 0) {
+            elements.offlineBanner?.classList.remove('hidden');
+            if (elements.offlinePendingCount) {
+                elements.offlinePendingCount.textContent = `${count} data belum disinkronkan`;
+            }
+        } else {
+            elements.offlineBanner?.classList.add('hidden');
+        }
+    }
+
+    function applyPendingQueueToState(stateObj) {
+        const queue = JSON.parse(localStorage.getItem('gosyen_pending_actions') || '[]');
+        queue.forEach(action => {
+            const body = JSON.parse(action.body || '{}');
+            applySingleActionToState(stateObj, action.url, action.method, body);
+        });
+    }
+
+    function applySingleActionToState(stateObj, url, method, body) {
+        if (url.includes('/stock-opname/movements') && method === 'POST') {
+            const itemId = body.stock_item_id;
+            const product = stateObj.products.find(p => p.id === itemId);
+            if (product) {
+                if (body.kind === 'count') {
+                    product.actualStock = body.quantity;
+                } else if (body.kind === 'in') {
+                    product.actualStock += body.quantity;
+                } else if (body.kind === 'out') {
+                    product.actualStock = Math.max(0, product.actualStock - body.quantity);
+                } else if (body.kind === 'sync') {
+                    product.actualStock = product.systemStock;
+                }
+            }
+        }
+        if (url.includes('/stock-opname/sessions') && method === 'POST' && !url.includes('/finalize') && !url.includes('/approve') && !url.includes('/reject')) {
+            stateObj.activeSession = {
+                id: Date.now(),
+                name: body.name,
+                status: 'active',
+                creatorName: 'Anda (Offline)',
+                createdAt: new Date().toISOString(),
+            };
+            stateObj.products.forEach(p => {
+                p.actualStock = 0;
+            });
+        }
+        if (url.includes('/sessions/') && url.includes('/finalize') && method === 'POST') {
+            let hasLargeDiscrepancy = false;
+            stateObj.products.forEach(p => {
+                if (Math.abs(p.actualStock - p.systemStock) >= 10) {
+                    hasLargeDiscrepancy = true;
+                }
+            });
+            
+            if (hasLargeDiscrepancy && !window.isAdmin) {
+                stateObj.pendingSession = {
+                    ...stateObj.activeSession,
+                    status: 'pending_approval',
+                };
+                stateObj.activeSession = null;
+            } else {
+                stateObj.products.forEach(p => {
+                    p.systemStock = p.actualStock;
+                });
+                if (stateObj.activeSession) {
+                    stateObj.pastSessions.unshift({
+                        id: stateObj.activeSession.id,
+                        name: stateObj.activeSession.name,
+                        completedAt: new Date().toISOString(),
+                        completerName: 'Anda (Offline)',
+                    });
+                }
+                stateObj.activeSession = null;
+            }
+        }
+    }
+
+    async function flushOfflineQueue() {
+        let queue = JSON.parse(localStorage.getItem('gosyen_pending_actions') || '[]');
+        if (queue.length === 0) return;
+
+        setBusy(`Sinkronisasi ${queue.length} data offline...`);
+        
+        const failed = [];
+        for (const action of queue) {
+            try {
+                await fetch(action.url, {
+                    method: action.method,
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': csrf,
+                    },
+                    body: action.body,
+                });
+            } catch (err) {
+                console.error('Failed to sync offline action:', err);
+                failed.push(action);
+            }
+        }
+
+        localStorage.setItem('gosyen_pending_actions', JSON.stringify(failed));
+        updateOfflineBanner();
+
+        if (failed.length === 0) {
+            showAlert('Semua data offline berhasil disinkronkan!', 'success');
+            await loadData(selectedCompanyId(), false);
+        } else {
+            setError(new Error(`Gagal mensinkronkan ${failed.length} data offline.`));
+        }
     }
 
     async function loadData(companyId = selectedCompanyId(), replaceUrl = true) {
@@ -248,6 +440,8 @@ if (app) {
         renderWarehouses();
         renderProducts();
         renderActivities();
+        renderSession();
+        renderSessionApprovals();
     }
 
     function renderWarehouses() {
@@ -433,6 +627,97 @@ if (app) {
         elements.activityLog.innerHTML = rows.length
             ? rows.join('')
             : '<div class="p-4 text-sm font-semibold text-[var(--muted)]">Belum ada aktivitas.</div>';
+    }
+
+    function renderSession() {
+        if (!elements.sessionStatusArea) return;
+
+        const session = state.activeSession;
+        const pending = state.pendingSession;
+
+        if (session) {
+            elements.sessionStatusArea.innerHTML = `
+                <div class="rounded-md bg-[#e8f2ff] p-3 text-sm text-[var(--brand-strong)] dark:bg-[#17324d] dark:text-[#85c4ff]">
+                    <span class="block font-bold">🟢 Sesi Aktif: ${escapeHtml(session.name)}</span>
+                    <span class="text-xs block mt-1">Dibuat oleh: <strong>${escapeHtml(session.creatorName)}</strong></span>
+                    <span class="text-xs block">Tanggal: ${new Intl.DateTimeFormat('id-ID', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(session.createdAt))}</span>
+                </div>
+                <button type="button" id="finalizeSessionBtn" data-action="finalize-session" class="w-full rounded-md bg-[var(--brand)] text-white py-2 px-3 text-xs font-bold transition hover:bg-[var(--brand-strong)] mt-2">
+                    Selesaikan & Sinkronisasi
+                </button>
+            `;
+        } else if (pending) {
+            elements.sessionStatusArea.innerHTML = `
+                <div class="rounded-md bg-[#fdecec] p-3 text-sm text-[#a12020] dark:bg-[#492125] dark:text-[#ff9ca0]">
+                    <span class="block font-bold">⏳ Menunggu Persetujuan</span>
+                    <span class="text-xs block mt-1 font-semibold">${escapeHtml(pending.name)}</span>
+                    <span class="text-xs block mt-1">Diajukan oleh: <strong>${escapeHtml(pending.creatorName)}</strong></span>
+                </div>
+                <div class="text-xs font-semibold text-[var(--muted)] text-center mt-1">
+                    Hubungi supervisor/admin untuk menyetujui selisih penyesuaian stok.
+                </div>
+            `;
+        } else {
+            elements.sessionStatusArea.innerHTML = `
+                <form id="startSessionForm" class="grid gap-2">
+                    <input name="sessionName" required class="field text-xs min-h-8 py-1.5" placeholder="Contoh: Opname Semester 1" />
+                    <button class="w-full rounded-md bg-[var(--brand)] text-white py-2 px-3 text-xs font-bold transition hover:bg-[var(--brand-strong)]">
+                        Buka Sesi Opname Baru
+                    </button>
+                </form>
+            `;
+        }
+
+        renderSessionControls();
+    }
+
+    function renderSessionControls() {
+        const hasActiveSession = !!state.activeSession;
+        
+        elements.movementForm?.querySelectorAll('button, select, input').forEach(control => {
+            control.disabled = !hasActiveSession || state.products.length === 0;
+        });
+
+        elements.productForm?.querySelectorAll('button, select, input').forEach(control => {
+            control.disabled = !hasActiveSession;
+        });
+
+        document.querySelectorAll('[data-action="count"], [data-action="quick-in"], [data-action="quick-out"], [data-action="sync"], [data-count-input]').forEach(el => {
+            el.disabled = !hasActiveSession;
+            if (el.tagName === 'INPUT') {
+                el.readOnly = !hasActiveSession;
+                if (!hasActiveSession) el.placeholder = 'Sesi tidak aktif';
+            }
+        });
+    }
+
+    function renderSessionApprovals() {
+        if (!elements.sessionApprovalPanel || !elements.pendingSessionsList) return;
+
+        const pending = state.pendingSession;
+
+        if (pending && window.isAdmin) {
+            elements.sessionApprovalPanel.classList.remove('hidden');
+            elements.pendingSessionsList.innerHTML = `
+                <div class="py-3 flex flex-col gap-2">
+                    <div class="min-w-0">
+                        <strong class="text-sm block text-[var(--text)]">${escapeHtml(pending.name)}</strong>
+                        <span class="text-xs text-[var(--muted)] block">Diajukan oleh: ${escapeHtml(pending.creatorName)}</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mt-1">
+                        <button type="button" data-action="approve-session" data-id="${pending.id}" class="rounded bg-[#0f6b4b] hover:bg-[#0b5139] text-white font-bold py-1.5 px-2 text-xs transition text-center">
+                            Approve
+                        </button>
+                        <button type="button" data-action="reject-session" data-id="${pending.id}" class="rounded bg-[#a12020] hover:bg-red-700 text-white font-bold py-1.5 px-2 text-xs transition text-center">
+                            Reject
+                        </button>
+                    </div>
+                </div>
+            `;
+        } else {
+            elements.sessionApprovalPanel.classList.add('hidden');
+            elements.pendingSessionsList.innerHTML = '';
+        }
     }
 
     function sessionPayload() {
@@ -886,6 +1171,256 @@ if (app) {
             return;
         }
     });
+
+    // -------------------------------------------------------------
+    // AUDIO & SPEECH FEEDBACK
+    // -------------------------------------------------------------
+    function playSuccessBeep() {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.setValueAtTime(880, ctx.currentTime);
+            gain.gain.setValueAtTime(0.08, ctx.currentTime);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.1);
+        } catch (e) {
+            console.log('Audio feedback not available');
+        }
+    }
+
+    function playErrorBeep() {
+        try {
+            const ctx = new (window.AudioContext || window.webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.setValueAtTime(220, ctx.currentTime);
+            gain.gain.setValueAtTime(0.12, ctx.currentTime);
+            osc.start();
+            osc.stop(ctx.currentTime + 0.25);
+        } catch (e) {
+            console.log('Audio feedback not available');
+        }
+    }
+
+    function speakText(text) {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'id-ID';
+            utterance.rate = 1.1;
+            window.speechSynthesis.speak(utterance);
+        }
+    }
+
+    // -------------------------------------------------------------
+    // BARCODE INPUT & CAMERA SCANNER
+    // -------------------------------------------------------------
+    function handleScannedBarcode(code) {
+        const barcode = code.trim().toLowerCase();
+        if (!barcode) return;
+
+        const product = state.products.find(p => p.code.toLowerCase() === barcode);
+        if (product) {
+            playSuccessBeep();
+            speakText(`Ditemukan: ${product.name}`);
+            
+            elements.searchInput.value = '';
+            elements.typeFilter.value = 'all';
+            elements.statusFilter.value = 'all';
+            renderProducts();
+
+            setTimeout(() => {
+                const inputEl = document.querySelector(`[data-count-input="${product.id}"]`);
+                if (inputEl) {
+                    const card = inputEl.closest('.stock-card');
+                    if (card) {
+                        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        card.classList.add('border-[var(--brand)]', 'ring-2', 'ring-[var(--brand)]');
+                        setTimeout(() => card.classList.remove('border-[var(--brand)]', 'ring-2', 'ring-[var(--brand)]'), 3000);
+                    }
+                    inputEl.focus();
+                    inputEl.select();
+                }
+            }, 100);
+        } else {
+            playErrorBeep();
+            speakText('Barang tidak ditemukan');
+            showAlert(`Produk dengan kode "${code}" tidak ditemukan.`, 'error');
+        }
+    }
+
+    elements.barcodeInput?.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            const code = elements.barcodeInput.value;
+            elements.barcodeInput.value = '';
+            handleScannedBarcode(code);
+        }
+    });
+
+    let html5QrcodeScanner = null;
+
+    elements.scanCameraBtn?.addEventListener('click', async () => {
+        if (!elements.scannerModal) return;
+        elements.scannerModal.classList.remove('hidden');
+
+        try {
+            if (typeof Html5Qrcode === 'undefined') {
+                throw new Error('Library kamera scanner gagal dimuat (cek internet).');
+            }
+
+            html5QrcodeScanner = new Html5Qrcode("scannerReader");
+            await html5QrcodeScanner.start(
+                { facingMode: "environment" },
+                {
+                    fps: 10,
+                    qrbox: { width: 250, height: 250 },
+                },
+                (decodedText) => {
+                    stopCameraScanner();
+                    handleScannedBarcode(decodedText);
+                },
+                (errorMessage) => {}
+            );
+        } catch (err) {
+            console.error(err);
+            showAlert('Gagal menyalakan kamera: ' + err.message, 'error');
+            elements.scannerModal.classList.add('hidden');
+        }
+    });
+
+    function stopCameraScanner() {
+        if (html5QrcodeScanner) {
+            html5QrcodeScanner.stop().then(() => {
+                html5QrcodeScanner = null;
+            }).catch(err => console.error('Failed to stop camera:', err));
+        }
+        elements.scannerModal?.classList.add('hidden');
+    }
+
+    elements.closeScannerBtn?.addEventListener('click', stopCameraScanner);
+    elements.stopScannerBtn?.addEventListener('click', stopCameraScanner);
+
+    // -------------------------------------------------------------
+    // SESSION EVENT LISTENERS
+    // -------------------------------------------------------------
+    elements.sessionStatusArea?.addEventListener('submit', async (event) => {
+        const form = event.target.closest('#startSessionForm');
+        if (!form) return;
+        event.preventDefault();
+        const data = new FormData(form);
+        const name = String(data.get('sessionName') || '').trim();
+
+        if (!name) return;
+
+        guardedRequest('start-session', async () => {
+            try {
+                setBusy('Membuka sesi...');
+                state = await request('/stock-opname/sessions', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        name,
+                        ...sessionPayload(),
+                    }),
+                });
+                setSynced();
+                render();
+            } catch (error) {
+                setError(error);
+            }
+        });
+    });
+
+    elements.sessionStatusArea?.addEventListener('click', async (event) => {
+        const button = event.target.closest('button[data-action="finalize-session"]');
+        if (!button) return;
+
+        const confirmed = await openDialog({
+            title: 'Selesaikan Sesi Opname?',
+            message: 'Aksi ini akan menyamakan stok sistem dengan hasil pencatatan fisik dan menutup sesi ini.',
+            confirmText: 'Ya, Selesaikan',
+        });
+
+        if (!confirmed) return;
+
+        guardedRequest('finalize-session', async () => {
+            try {
+                setBusy('Finalisasi sesi...');
+                const response = await request(`/stock-opname/sessions/${state.activeSession.id}/finalize`, {
+                    method: 'POST',
+                    body: JSON.stringify(sessionPayload()),
+                });
+
+                if (response.pending) {
+                    showAlert(response.message, 'success');
+                    state = response.payload;
+                } else {
+                    state = response;
+                    showAlert('Sesi opname berhasil diselesaikan!', 'success');
+                }
+                setSynced();
+                render();
+            } catch (error) {
+                setError(error);
+            }
+        });
+    });
+
+    elements.pendingSessionsList?.addEventListener('click', async (event) => {
+        const button = event.target.closest('button[data-action]');
+        if (!button) return;
+
+        const action = button.dataset.action;
+        const sessionId = button.dataset.id;
+        const actionLabel = action === 'approve-session' ? 'menyetujui' : 'menolak';
+
+        const confirmed = await openDialog({
+            title: `Konfirmasi ${actionLabel} sesi`,
+            message: `Apakah Anda yakin ingin ${actionLabel} sesi opname ini?`,
+            confirmText: 'Lanjutkan',
+            danger: action === 'reject-session',
+        });
+
+        if (!confirmed) return;
+
+        const endpoint = action === 'approve-session' ? 'approve' : 'reject';
+
+        guardedRequest(`${action}:${sessionId}`, async () => {
+            try {
+                setBusy(`${action === 'approve-session' ? 'Menyetujui' : 'Menolak'} sesi...`);
+                state = await request(`/stock-opname/sessions/${sessionId}/${endpoint}`, {
+                    method: 'POST',
+                    body: JSON.stringify(sessionPayload()),
+                });
+                showAlert(`Sesi opname berhasil ${action === 'approve-session' ? 'disetujui' : 'ditolak'}.`, 'success');
+                setSynced();
+                render();
+            } catch (error) {
+                setError(error);
+            }
+        });
+    });
+
+    // -------------------------------------------------------------
+    // ONLINE/OFFLINE EVENT DETECTORS
+    // -------------------------------------------------------------
+    window.addEventListener('online', () => {
+        isOffline = false;
+        elements.offlineBanner?.classList.add('hidden');
+        flushOfflineQueue().catch(setError);
+    });
+
+    window.addEventListener('offline', () => {
+        isOffline = true;
+        updateOfflineBanner();
+    });
+
+    updateOfflineBanner();
 
     elements.searchInput.addEventListener('input', renderProducts);
     elements.companySelect.addEventListener('change', () => {

@@ -14,6 +14,7 @@
     <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600,700" rel="stylesheet" />
 
     @vite(['resources/css/app.css', 'resources/js/app.js'])
+    <script src="https://unpkg.com/html5-qrcode" defer></script>
     <script>
         window.isAdmin = {{ auth()->user()->isAdmin() ? 'true' : 'false' }};
     </script>
@@ -67,9 +68,16 @@
             </div>
         </header>
 
+        <div id="offlineBanner" class="hidden bg-[#a12020] text-white text-center py-2 px-4 text-xs font-bold sm:text-sm">
+            ⚠️ Mode Offline: Menggunakan data lokal. <span id="offlinePendingCount" class="underline ml-1">0 data belum disinkronkan</span>.
+        </div>
+
         <div class="border-b border-[var(--line)] bg-[var(--subheader)]">
             <div class="mx-auto flex max-w-7xl items-center justify-between gap-3 px-3 py-4 sm:px-6 lg:px-8">
-                <h2 class="text-lg font-bold text-[var(--text)]">Stock Opname</h2>
+                <div class="flex items-center gap-2">
+                    <h2 class="text-lg font-bold text-[var(--text)]">Stock Opname</h2>
+                    <span id="syncStatus" class="rounded-md bg-[var(--panel-soft)] px-3 py-2 text-xs font-bold text-[var(--brand)]">Tersimpan di database</span>
+                </div>
                 <button id="exportCsv" class="rounded-md bg-[#0f6b4b] px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-[#0b5139] sm:text-sm" type="button">
                     Export
                 </button>
@@ -78,6 +86,26 @@
 
         <main class="mx-auto grid max-w-7xl items-start gap-3 px-3 py-3 sm:gap-4 sm:px-6 lg:grid-cols-[360px_1fr] lg:px-8">
             <section class="grid auto-rows-max gap-4 lg:sticky lg:top-24 lg:self-start">
+                <!-- Panel Sesi Opname -->
+                <div class="panel form-panel form-panel-company p-4">
+                    <p class="text-sm font-semibold text-[var(--muted)]">Sesi Opname Aktif</p>
+                    <div id="sessionStatusArea" class="mt-3 grid gap-2">
+                        <!-- Diisi oleh JS -->
+                    </div>
+                </div>
+
+                <!-- Panel Persetujuan Sesi (Hanya Admin) -->
+                @if (auth()->user()->isAdmin())
+                <div id="sessionApprovalPanel" class="panel p-4 border-2 border-dashed border-[#df6569] hidden">
+                    <p class="text-sm font-bold text-[#a12020] dark:text-[#ff9ca0] flex items-center gap-1">
+                        ⚠️ Butuh Persetujuan Opname
+                    </p>
+                    <div id="pendingSessionsList" class="mt-3 divide-y divide-[var(--line)] max-h-48 overflow-y-auto">
+                        <!-- Diisi oleh JS -->
+                    </div>
+                </div>
+                @endif
+
                 <div class="panel form-panel form-panel-company p-4">
                     <p class="text-sm font-semibold text-[var(--muted)]">Client company</p>
                     <div class="mt-3 grid gap-3">
@@ -188,11 +216,21 @@
             </section>
 
             <section class="grid auto-rows-max gap-4">
-                <div class="panel grid gap-3 p-4 md:grid-cols-[1fr_170px_150px]">
+                <div class="panel grid gap-3 p-4 md:grid-cols-[1.5fr_1.2fr_auto_1fr_1fr]">
                     <label class="block">
                         <span class="label">Cari nama, tipe, kode</span>
                         <input id="searchInput" class="field mt-1" placeholder="Ketik untuk filter stok..." />
                     </label>
+                    <label class="block">
+                        <span class="label">Pindai Barcode (Keyboard/Gun)</span>
+                        <input id="barcodeInput" class="field mt-1 border-[var(--brand)] focus:shadow-[0_0_0_3px_rgba(47,128,194,0.3)]" placeholder="Fokus & scan..." />
+                    </label>
+                    <div class="block">
+                        <span class="label">Scan Kamera</span>
+                        <button id="scanCameraBtn" type="button" class="field mt-1 flex items-center justify-center gap-1.5 bg-[var(--brand)] text-white hover:bg-[var(--brand-strong)] font-bold transition">
+                            📷 Scan
+                        </button>
+                    </div>
                     <label class="block">
                         <span class="label">Filter tipe</span>
                         <select id="typeFilter" class="field mt-1"></select>
@@ -231,6 +269,23 @@
                 </div>
             </section>
         </main>
+    </div>
+
+    <!-- Modal Scanner Kamera -->
+    <div id="scannerModal" class="confirm-backdrop hidden" style="z-index: 100;">
+        <div class="confirm-dialog max-w-md w-full">
+            <div class="confirm-dialog-body">
+                <h2 class="confirm-dialog-title flex items-center justify-between">
+                    <span>Pindai Barcode Barang</span>
+                    <button id="closeScannerBtn" type="button" class="text-2xl font-bold hover:text-red-500" aria-label="Tutup modal scanner">&times;</button>
+                </h2>
+                <p class="confirm-dialog-message">Arahkan kamera HP / laptop ke barcode/QR Code produk.</p>
+                <div id="scannerReader" class="w-full overflow-hidden rounded-md border border-[var(--line)] bg-black" style="min-height: 250px;"></div>
+            </div>
+            <div class="confirm-dialog-actions" style="grid-template-columns: 1fr;">
+                <button id="stopScannerBtn" class="confirm-button hover:bg-[var(--panel-soft)]" type="button">Tutup & Matikan Kamera</button>
+            </div>
+        </div>
     </div>
 </body>
 </html>
