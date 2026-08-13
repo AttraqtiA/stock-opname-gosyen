@@ -40,6 +40,9 @@
                         </svg>
                     </button>
                     <div id="navActions" class="nav-actions">
+                    <a href="{{ route('home') }}" class="nav-action">
+                        Stock Opname
+                    </a>
                     @if (auth()->user()->isAdmin())
                         <a href="{{ route('admin.users') }}" class="nav-action">
                             Akun
@@ -249,10 +252,10 @@
                 <div id="loadingState" class="panel p-4 text-sm font-semibold text-[var(--muted)]">Mengambil data stok...</div>
 
                 <div class="grid auto-rows-max grid-cols-2 gap-3 md:grid-cols-4">
-                    <div class="metric"><span>Total SKU</span><strong id="totalSku">0</strong></div>
-                    <div class="metric"><span>Sesuai</span><strong id="matchCount">0</strong></div>
-                    <div class="metric"><span>Selisih +</span><strong id="plusCount">0</strong></div>
-                    <div class="metric"><span>Selisih -</span><strong id="minusCount">0</strong></div>
+                    <div class="metric"><span id="metric1Label">Total SKU</span><strong id="totalSku">0</strong></div>
+                    <div class="metric"><span id="metric2Label">Sesuai</span><strong id="matchCount">0</strong></div>
+                    <div class="metric"><span id="metric3Label">Selisih +</span><strong id="plusCount">0</strong></div>
+                    <div class="metric"><span id="metric4Label">Selisih -</span><strong id="minusCount">0</strong></div>
                 </div>
 
                 <div id="productList" class="grid gap-3"></div>

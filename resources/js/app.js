@@ -28,6 +28,39 @@ document.querySelectorAll('[data-nav-menu-toggle]').forEach((toggle) => {
     });
 });
 
+// Initialize theme globally
+const savedTheme = localStorage.getItem('gosyen-stock-theme') || 'light';
+document.documentElement.classList.toggle('dark', savedTheme === 'dark');
+
+function syncThemeToggleUI(theme) {
+    const toggle = document.getElementById('themeToggle');
+    if (toggle) {
+        toggle.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
+        toggle.querySelector('.theme-icon-moon')?.classList.toggle('hidden', theme === 'dark');
+        toggle.querySelector('.theme-icon-sun')?.classList.toggle('hidden', theme !== 'dark');
+    }
+}
+
+// Sync UI on DOMContentLoaded
+document.addEventListener('DOMContentLoaded', () => {
+    syncThemeToggleUI(localStorage.getItem('gosyen-stock-theme') || 'light');
+});
+
+// Global event listener for theme toggle
+document.addEventListener('click', (event) => {
+    const toggle = event.target.closest('#themeToggle');
+    if (toggle) {
+        const isDark = document.documentElement.classList.contains('dark');
+        const nextTheme = isDark ? 'light' : 'dark';
+        
+        document.documentElement.classList.toggle('dark', nextTheme === 'dark');
+        localStorage.setItem('gosyen-stock-theme', nextTheme);
+        syncThemeToggleUI(nextTheme);
+        
+        document.querySelector('#navActions')?.classList.remove('is-open');
+    }
+});
+
 const app = document.querySelector('#stock-app');
 
 if (app) {
@@ -97,14 +130,6 @@ if (app) {
         url.searchParams.set('company_id', companyId);
         const method = replace ? 'replaceState' : 'pushState';
         window.history[method]({}, '', url);
-    }
-
-    function applyTheme(theme) {
-        document.documentElement.classList.toggle('dark', theme === 'dark');
-        localStorage.setItem('gosyen-stock-theme', theme);
-        elements.themeToggle.setAttribute('aria-label', theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode');
-        elements.themeToggle.querySelector('.theme-icon-moon')?.classList.toggle('hidden', theme === 'dark');
-        elements.themeToggle.querySelector('.theme-icon-sun')?.classList.toggle('hidden', theme !== 'dark');
     }
 
     let isOffline = !navigator.onLine;
@@ -510,15 +535,47 @@ if (app) {
     }
 
     function renderSummary() {
-        const counts = state.products.reduce((carry, product) => {
-            carry[getStatus(product)] += 1;
-            return carry;
-        }, { match: 0, plus: 0, minus: 0 });
+        const isEmployeeBlind = !window.isAdmin && state.activeSession;
 
-        elements.totalSku.textContent = state.products.length;
-        elements.matchCount.textContent = counts.match;
-        elements.plusCount.textContent = counts.plus;
-        elements.minusCount.textContent = counts.minus;
+        if (isEmployeeBlind) {
+            const counted = state.products.filter(p => p.actualStock > 0).length;
+            const uncounted = state.products.length - counted;
+
+            const metric1 = document.getElementById('metric1Label');
+            const metric2 = document.getElementById('metric2Label');
+            const metric3 = document.getElementById('metric3Label');
+            const metric4 = document.getElementById('metric4Label');
+
+            if (metric1) metric1.textContent = 'Total SKU';
+            if (metric2) metric2.textContent = 'Sudah Dihitung';
+            if (metric3) metric3.textContent = 'Belum Dihitung';
+            if (metric4) metric4.textContent = 'Sesi Opname';
+
+            elements.totalSku.textContent = state.products.length;
+            elements.matchCount.textContent = counted;
+            elements.plusCount.textContent = uncounted;
+            elements.minusCount.textContent = 'Aktif';
+        } else {
+            const counts = state.products.reduce((carry, product) => {
+                carry[getStatus(product)] += 1;
+                return carry;
+            }, { match: 0, plus: 0, minus: 0 });
+
+            const metric1 = document.getElementById('metric1Label');
+            const metric2 = document.getElementById('metric2Label');
+            const metric3 = document.getElementById('metric3Label');
+            const metric4 = document.getElementById('metric4Label');
+
+            if (metric1) metric1.textContent = 'Total SKU';
+            if (metric2) metric2.textContent = 'Sesuai';
+            if (metric3) metric3.textContent = 'Selisih +';
+            if (metric4) metric4.textContent = 'Selisih -';
+
+            elements.totalSku.textContent = state.products.length;
+            elements.matchCount.textContent = counts.match;
+            elements.plusCount.textContent = counts.plus;
+            elements.minusCount.textContent = counts.minus;
+        }
     }
 
     function renderMovementOptions() {
@@ -545,9 +602,22 @@ if (app) {
             return;
         }
 
+        const isEmployeeBlind = !window.isAdmin && state.activeSession;
+
         elements.productList.innerHTML = products.map((product) => {
             const diff = product.actualStock - product.systemStock;
             const status = getStatus(product);
+
+            const displaySystemStock = isEmployeeBlind ? '🔒' : product.systemStock;
+            const displayDiff = isEmployeeBlind ? '🔒' : `${diff > 0 ? '+' : ''}${diff}`;
+            const displayStatusLabel = isEmployeeBlind 
+                ? (product.actualStock > 0 ? 'Sudah Dihitung' : 'Belum Dihitung') 
+                : statusLabel(status);
+            const displayStatusClass = isEmployeeBlind
+                ? (product.actualStock > 0 
+                    ? 'bg-[#e8f6ec] text-[#0b6a3b] dark:bg-[#123628] dark:text-[#7bd8a4]' 
+                    : 'bg-[var(--panel-soft)] text-[var(--muted)]')
+                : statusClass(status);
 
             return `
                 <article class="stock-card">
@@ -556,7 +626,7 @@ if (app) {
                             <div class="flex flex-wrap items-center gap-2">
                                 <span class="rounded-md bg-[var(--panel-soft)] px-2 py-1 text-xs font-bold text-[var(--muted)]">${escapeHtml(product.code)}</span>
                                 <span class="rounded-md bg-[var(--panel-soft)] px-2 py-1 text-xs font-semibold text-[var(--brand)]">📍 ${escapeHtml(state.warehouses.find(w => w.id === product.warehouseId)?.name || 'Utama')}</span>
-                                <span class="rounded-md px-2 py-1 text-xs font-bold ${statusClass(status)}">${statusLabel(status)}</span>
+                                <span class="rounded-md px-2 py-1 text-xs font-bold ${displayStatusClass}">${displayStatusLabel}</span>
                             </div>
                             <div class="product-title-row mt-2">
                                 <h3 class="min-w-0 text-lg font-bold text-[var(--text)]">${escapeHtml(product.name)}</h3>
@@ -570,9 +640,9 @@ if (app) {
                             <p class="text-sm font-semibold text-[var(--muted)]">${escapeHtml(product.type)} · ${escapeHtml(product.unit)}</p>
                         </div>
                         <div class="grid grid-cols-3 gap-2 text-center md:min-w-[270px]">
-                            <div class="rounded-md bg-[var(--panel-soft)] p-2"><span class="text-xs font-bold text-[var(--muted)]">Sistem</span><strong class="block text-lg text-[var(--text)]">${product.systemStock}</strong></div>
+                            <div class="rounded-md bg-[var(--panel-soft)] p-2"><span class="text-xs font-bold text-[var(--muted)]">Sistem</span><strong class="block text-lg text-[var(--text)]">${displaySystemStock}</strong></div>
                             <div class="rounded-md bg-[var(--panel-soft)] p-2"><span class="text-xs font-bold text-[var(--muted)]">Fisik</span><strong class="block text-lg text-[var(--text)]">${product.actualStock}</strong></div>
-                            <div class="rounded-md bg-[var(--panel-soft)] p-2"><span class="text-xs font-bold text-[var(--muted)]">Selisih</span><strong class="block text-lg text-[var(--text)]">${diff > 0 ? '+' : ''}${diff}</strong></div>
+                            <div class="rounded-md bg-[var(--panel-soft)] p-2"><span class="text-xs font-bold text-[var(--muted)]">Selisih</span><strong class="block text-lg text-[var(--text)]">${displayDiff}</strong></div>
                         </div>
                     </div>
                     <div class="stock-workflow">
@@ -588,7 +658,9 @@ if (app) {
                             <div class="stock-button-grid">
                                 <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="quick-in" data-id="${product.id}" data-pending-key="quick-in:${product.id}" type="button">Tambah fisik +1</button>
                                 <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="quick-out" data-id="${product.id}" data-pending-key="quick-out:${product.id}" type="button">Kurangi fisik -1</button>
+                                ${!isEmployeeBlind ? `
                                 <button class="stock-action disabled:cursor-not-allowed disabled:opacity-50" data-action="sync" data-id="${product.id}" data-pending-key="sync:${product.id}" type="button">Fisik = Sistem</button>
+                                ` : ''}
                             </div>
                         </div>
                         ${window.isAdmin ? `
@@ -697,6 +769,42 @@ if (app) {
         const pending = state.pendingSession;
 
         if (pending && window.isAdmin) {
+            const discrepancies = state.products.filter(p => p.actualStock !== p.systemStock);
+            
+            let discrepanciesHtml = '';
+            if (discrepancies.length > 0) {
+                discrepanciesHtml = `
+                    <div class="mt-2 text-xs border border-[var(--line)] rounded-md bg-[var(--panel-soft)] overflow-hidden">
+                        <div class="bg-[var(--panel)] px-2 py-1 font-bold border-b border-[var(--line)] text-[var(--text)]">Rincian Selisih:</div>
+                        <div class="max-h-40 overflow-y-auto divide-y divide-[var(--line)]">
+                            ${discrepancies.map(p => {
+                                const diff = p.actualStock - p.systemStock;
+                                const isLarge = Math.abs(diff) >= 10;
+                                const colorClass = diff > 0 ? 'text-[#0b6a3b] dark:text-[#7bd8a4]' : 'text-[#a12020] dark:text-[#ff9ca0]';
+                                const boldClass = isLarge ? 'font-bold underline' : 'font-semibold';
+                                return `
+                                    <div class="p-2 flex flex-col gap-0.5">
+                                        <div class="flex justify-between font-semibold text-[var(--text)]">
+                                            <span class="truncate pr-1">${escapeHtml(p.name)}</span>
+                                            <span class="${colorClass} ${boldClass}">${diff > 0 ? '+' : ''}${diff} ${escapeHtml(p.unit)}</span>
+                                        </div>
+                                        <div class="text-[10px] text-[var(--muted)]">
+                                            Sistem: ${p.systemStock} · Fisik: ${p.actualStock} ${isLarge ? '<span class="text-[#a12020] font-bold ml-1">(≥10 unit)</span>' : ''}
+                                        </div>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            } else {
+                discrepanciesHtml = `
+                    <div class="mt-2 text-xs text-[var(--muted)] text-center p-2 border border-[var(--line)] rounded-md bg-[var(--panel-soft)]">
+                        Tidak ada selisih stok yang tercatat.
+                    </div>
+                `;
+            }
+
             elements.sessionApprovalPanel.classList.remove('hidden');
             elements.pendingSessionsList.innerHTML = `
                 <div class="py-3 flex flex-col gap-2">
@@ -704,11 +812,14 @@ if (app) {
                         <strong class="text-sm block text-[var(--text)]">${escapeHtml(pending.name)}</strong>
                         <span class="text-xs text-[var(--muted)] block">Diajukan oleh: ${escapeHtml(pending.creatorName)}</span>
                     </div>
-                    <div class="grid grid-cols-2 gap-2 mt-1">
-                        <button type="button" data-action="approve-session" data-id="${pending.id}" class="rounded bg-[#0f6b4b] hover:bg-[#0b5139] text-white font-bold py-1.5 px-2 text-xs transition text-center">
+                    
+                    ${discrepanciesHtml}
+
+                    <div class="grid grid-cols-2 gap-2 mt-2">
+                        <button type="button" data-action="approve-session" data-id="${pending.id}" class="rounded bg-[#0f6b4b] hover:bg-[#0b5139] text-white font-bold py-1.5 px-2 text-xs transition text-center shadow-sm">
                             Approve
                         </button>
-                        <button type="button" data-action="reject-session" data-id="${pending.id}" class="rounded bg-[#a12020] hover:bg-red-700 text-white font-bold py-1.5 px-2 text-xs transition text-center">
+                        <button type="button" data-action="reject-session" data-id="${pending.id}" class="rounded bg-[#a12020] hover:bg-red-700 text-white font-bold py-1.5 px-2 text-xs transition text-center shadow-sm">
                             Reject
                         </button>
                     </div>
@@ -1432,16 +1543,11 @@ if (app) {
         const params = new URLSearchParams(sessionPayload());
         window.location.href = `/stock-opname/export?${params.toString()}`;
     });
-    elements.themeToggle.addEventListener('click', () => {
-        applyTheme(document.documentElement.classList.contains('dark') ? 'light' : 'dark');
-        elements.navActions?.classList.remove('is-open');
-    });
     elements.alertRegion?.addEventListener('click', (event) => {
         if (event.target.closest('[data-alert-close]')) {
             window.clearTimeout(alertTimeout);
             clearAlert();
         }
     });
-    applyTheme(localStorage.getItem('gosyen-stock-theme') || 'light');
     loadData().catch(setError);
 }
